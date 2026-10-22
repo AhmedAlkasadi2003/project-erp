@@ -1,5 +1,5 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, MinLength, validateSync } from 'class-validator';
 
 export enum Environment {
   Development = 'development',
@@ -22,6 +22,14 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CORS_ORIGIN: string = 'http://localhost:5173';
+
+  @IsString()
+  @MinLength(16, { message: 'JWT_SECRET must be at least 16 characters long' })
+  JWT_SECRET: string = 'super_secret_erp_jwt_key_for_development_min_32_chars!';
+
+  @IsString()
+  @IsOptional()
+  JWT_EXPIRES_IN: string = '1h';
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

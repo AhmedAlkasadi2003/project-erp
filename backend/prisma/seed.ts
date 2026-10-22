@@ -6,14 +6,15 @@ import {
   UserRole,
   ValuationMethod,
 } from '@prisma/client';
+import { hash } from '@node-rs/argon2';
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  console.log('🌱 Starting deterministic development seed...');
+  console.log('🌱 Starting deterministic development seed with authentication credentials...');
 
-  // 1. Seed Tenant Company
-  const company = await prisma.company.upsert({
+  // 1. Seed Tenant Company 1 (COMP-01)
+  const company1 = await prisma.company.upsert({
     where: { code: 'COMP-01' },
     update: {},
     create: {
@@ -24,57 +25,119 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`✓ Company seeded: ${company.name} (${company.code})`);
+  console.log(`✓ Company 1 seeded: ${company1.name} (${company1.code})`);
 
-  // 2. Seed Administrator User
+  // 2. Hash standard test passwords with Argon2id
+  const adminPasswordHash = await hash('Admin123!@#');
+  const clerkPasswordHash = await hash('Clerk123!@#');
+  const accountantPasswordHash = await hash('Accountant123!@#');
+  const superAdminPasswordHash = await hash('SuperAdmin123!@#');
+  const betaAdminPasswordHash = await hash('BetaAdmin123!@#');
+
+  // 3. Seed Users for Company 1
   const adminUser = await prisma.user.upsert({
     where: {
       companyId_email: {
-        companyId: company.id,
+        companyId: company1.id,
         email: 'admin@acme-erp.local',
       },
     },
-    update: {},
+    update: { passwordHash: adminPasswordHash },
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       email: 'admin@acme-erp.local',
       name: 'System Administrator',
+      passwordHash: adminPasswordHash,
       role: UserRole.ADMIN,
       isActive: true,
     },
   });
-  console.log(`✓ Administrator user seeded: ${adminUser.email}`);
 
-  // 3. Seed Primary Warehouse
-  const warehouse = await prisma.warehouse.upsert({
+  const clerkUser = await prisma.user.upsert({
+    where: {
+      companyId_email: {
+        companyId: company1.id,
+        email: 'clerk@acme-erp.local',
+      },
+    },
+    update: { passwordHash: clerkPasswordHash },
+    create: {
+      companyId: company1.id,
+      email: 'clerk@acme-erp.local',
+      name: 'Receiving Clerk',
+      passwordHash: clerkPasswordHash,
+      role: UserRole.CLERK,
+      isActive: true,
+    },
+  });
+
+  const accountantUser = await prisma.user.upsert({
+    where: {
+      companyId_email: {
+        companyId: company1.id,
+        email: 'accountant@acme-erp.local',
+      },
+    },
+    update: { passwordHash: accountantPasswordHash },
+    create: {
+      companyId: company1.id,
+      email: 'accountant@acme-erp.local',
+      name: 'Chief Accountant',
+      passwordHash: accountantPasswordHash,
+      role: UserRole.ACCOUNTANT,
+      isActive: true,
+    },
+  });
+
+  const superAdminUser = await prisma.user.upsert({
+    where: {
+      companyId_email: {
+        companyId: company1.id,
+        email: 'superadmin@acme-erp.local',
+      },
+    },
+    update: { passwordHash: superAdminPasswordHash },
+    create: {
+      companyId: company1.id,
+      email: 'superadmin@acme-erp.local',
+      name: 'Platform Super Admin',
+      passwordHash: superAdminPasswordHash,
+      role: UserRole.SUPER_ADMIN,
+      isActive: true,
+    },
+  });
+  console.log(`✓ Company 1 users seeded: Admin, Clerk, Accountant, SuperAdmin`);
+
+  // 4. Seed Primary Warehouse for Company 1
+  const warehouse1 = await prisma.warehouse.upsert({
     where: {
       companyId_code: {
-        companyId: company.id,
+        companyId: company1.id,
         code: 'WH-MAIN',
       },
     },
     update: {},
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       code: 'WH-MAIN',
       name: 'Central Distribution Warehouse',
       address: 'Industrial District Plot 42, Sector B',
       isActive: true,
     },
   });
-  console.log(`✓ Warehouse seeded: ${warehouse.name} (${warehouse.code})`);
+  console.log(`✓ Warehouse seeded: ${warehouse1.name} (${warehouse1.code})`);
 
-  // 4. Seed Standard Supplier
-  const supplier = await prisma.supplier.upsert({
+  // 5. Seed Standard Supplier for Company 1
+  const supplier1 = await prisma.supplier.upsert({
     where: {
       companyId_code: {
-        companyId: company.id,
+        companyId: company1.id,
         code: 'SUP-001',
       },
     },
     update: {},
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       code: 'SUP-001',
       name: 'Apex Raw Materials Corp',
       taxId: 'US-TAX-8849201',
@@ -83,9 +146,9 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`✓ Supplier seeded: ${supplier.name} (${supplier.code})`);
+  console.log(`✓ Supplier seeded: ${supplier1.name} (${supplier1.code})`);
 
-  // 5. Seed Core Chart of Accounts (COA)
+  // 6. Seed Core Chart of Accounts for Company 1
   const accountsData = [
     {
       code: '1200',
@@ -130,13 +193,13 @@ async function main(): Promise<void> {
     const createdAccount = await prisma.account.upsert({
       where: {
         companyId_code: {
-          companyId: company.id,
+          companyId: company1.id,
           code: acc.code,
         },
       },
       update: {},
       create: {
-        companyId: company.id,
+        companyId: company1.id,
         code: acc.code,
         name: acc.name,
         type: acc.type,
@@ -149,24 +212,23 @@ async function main(): Promise<void> {
   }
   console.log(`✓ Chart of accounts seeded: ${accountsData.length} accounts`);
 
-  // 6. Seed Accounting Period (Current Active Month)
+  // 7. Seed Accounting Period for Company 1
   const currentYear = new Date().getFullYear();
   const currentMonth = (new Date().getMonth() + 1).toString().padStart(2, '0');
   const periodName = `FY${currentYear}-M${currentMonth}`;
-
   const startDate = new Date(currentYear, new Date().getMonth(), 1);
   const endDate = new Date(currentYear, new Date().getMonth() + 1, 0, 23, 59, 59);
 
   const period = await prisma.accountingPeriod.upsert({
     where: {
       companyId_name: {
-        companyId: company.id,
+        companyId: company1.id,
         name: periodName,
       },
     },
     update: {},
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       name: periodName,
       startDate,
       endDate,
@@ -175,17 +237,17 @@ async function main(): Promise<void> {
   });
   console.log(`✓ Accounting period seeded: ${period.name} (Status: ${period.status})`);
 
-  // 7. Seed Item Master (Inventory Items)
+  // 8. Seed Item Master for Company 1
   const itemSteel = await prisma.item.upsert({
     where: {
       companyId_sku: {
-        companyId: company.id,
+        companyId: company1.id,
         sku: 'SKU-STEEL-10',
       },
     },
     update: {},
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       sku: 'SKU-STEEL-10',
       name: 'Cold-Rolled Steel Sheet 10mm',
       description: 'Heavy gauge steel sheet for industrial fabrication',
@@ -202,13 +264,13 @@ async function main(): Promise<void> {
   const itemBolt = await prisma.item.upsert({
     where: {
       companyId_sku: {
-        companyId: company.id,
+        companyId: company1.id,
         sku: 'SKU-BOLT-M12',
       },
     },
     update: {},
     create: {
-      companyId: company.id,
+      companyId: company1.id,
       sku: 'SKU-BOLT-M12',
       name: 'Industrial Hex Bolt M12x50',
       description: 'High tensile zinc-plated fastener',
@@ -221,22 +283,22 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`✓ Items seeded: ${itemSteel.sku} (Moving Avg), ${itemBolt.sku} (Standard Cost)`);
+  console.log(`✓ Items seeded: ${itemSteel.sku}, ${itemBolt.sku}`);
 
-  // 8. Seed Initial Zero Stock Balances
+  // 9. Seed Initial Zero Stock Balances for Company 1
   for (const item of [itemSteel, itemBolt]) {
     await prisma.stockBalance.upsert({
       where: {
         companyId_warehouseId_itemId: {
-          companyId: company.id,
-          warehouseId: warehouse.id,
+          companyId: company1.id,
+          warehouseId: warehouse1.id,
           itemId: item.id,
         },
       },
       update: {},
       create: {
-        companyId: company.id,
-        warehouseId: warehouse.id,
+        companyId: company1.id,
+        warehouseId: warehouse1.id,
         itemId: item.id,
         quantityOnHand: 0,
         totalValue: 0,
@@ -245,7 +307,58 @@ async function main(): Promise<void> {
       },
     });
   }
-  console.log('✓ Initial zero stock balance records seeded for warehouse items');
+
+  // 10. Seed Tenant Company 2 (COMP-02) for Cross-Tenant Multi-Tenancy Testing
+  const company2 = await prisma.company.upsert({
+    where: { code: 'COMP-02' },
+    update: {},
+    create: {
+      code: 'COMP-02',
+      name: 'Beta Manufacturing Corp',
+      currency: 'USD',
+      fiscalYearStart: 1,
+      isActive: true,
+    },
+  });
+
+  const betaAdminUser = await prisma.user.upsert({
+    where: {
+      companyId_email: {
+        companyId: company2.id,
+        email: 'admin@beta-corp.local',
+      },
+    },
+    update: { passwordHash: betaAdminPasswordHash },
+    create: {
+      companyId: company2.id,
+      email: 'admin@beta-corp.local',
+      name: 'Beta Admin User',
+      passwordHash: betaAdminPasswordHash,
+      role: UserRole.ADMIN,
+      isActive: true,
+    },
+  });
+
+  const warehouse2 = await prisma.warehouse.upsert({
+    where: {
+      companyId_code: {
+        companyId: company2.id,
+        code: 'WH-BETA',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      code: 'WH-BETA',
+      name: 'Beta North Facility',
+      address: 'Route 101, Northern Industrial Zone',
+      isActive: true,
+    },
+  });
+  console.log(
+    `✓ Company 2 seeded for multi-tenancy verification: ${company2.name} (${company2.code})`,
+  );
+
   console.log('✅ Development database seed completed successfully.');
 }
 

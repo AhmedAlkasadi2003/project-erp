@@ -15,7 +15,8 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 
 - **Phase 01 — Project Workspace Setup**: ✅ **COMPLETED** (Monorepo architecture, Docker Compose, NestJS 11, React 19, strict quality gates).
 - **Phase 02 — Database Foundation & Prisma**: ✅ **COMPLETED** (PostgreSQL 16 relational data model, Prisma ORM 6, migrations, deterministic seed, strict Decimal precision).
-- **Phase 03 — Core Domain Services & Costing Engine**: ⏳ **NEXT UP** (Moving average costing calculation, double-entry GL posting rules, atomic state transitions).
+- **Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy**: ✅ **COMPLETED** (Argon2id password hashing, JWT authentication, RBAC authorization, multi-tenant boundary guards, Helmet, correlation IDs, 100% passing unit & E2E tests).
+- **Phase 04 — Core Domain Services & Costing Engine**: ⏳ **NEXT UP** (Moving average costing calculation, double-entry GL posting rules, atomic state transitions).
 
 ---
 
@@ -24,6 +25,7 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Backend**: [NestJS 11](https://nestjs.com/) + [TypeScript 5.7+](https://www.typescriptlang.org/) (Strict Mode)
 - **Database**: [PostgreSQL 16 Alpine](https://www.postgresql.org/)
 - **ORM**: [Prisma ORM 6.19+](https://www.prisma.io/)
+- **Security & Auth**: `@node-rs/argon2`, `@nestjs/jwt`, `@nestjs/passport`, `passport-jwt`, `helmet`
 - **Frontend**: [React 19](https://react.dev/) + [Vite 6](https://vitejs.dev/) + [TypeScript 5.7+](https://www.typescriptlang.org/)
 - **Package Manager & Monorepo**: [pnpm 11](https://pnpm.io/) Workspaces
 - **Containerization**: [Docker](https://www.docker.com/) & Docker Compose
@@ -33,7 +35,10 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 
 ## 3. Database Architecture & Data Model
 
-The database foundation is fully implemented in PostgreSQL via Prisma migrations (`20261022084335_init_database_foundation`):
+The database foundation is fully implemented in PostgreSQL via Prisma migrations:
+
+- `20261022084335_init_database_foundation`: Core business entities, relational constraints, enums, and indexes.
+- `20261022090116_add_auth_credentials_and_super_admin`: Added `SUPER_ADMIN` to `UserRole` and `passwordHash` to `User`.
 
 ### 3.1 Core Entity Map
 
@@ -103,7 +108,37 @@ pnpm dev:frontend
 
 ---
 
-## 7. Quality Gates & Validation Commands
+## 7. Authentication, RBAC & Endpoints
+
+### 7.1 Seeded Test Accounts
+
+The deterministic seed (`pnpm db:seed`) provides test credentials hashed with **Argon2id**:
+
+| Company Code | Company Name                | Email                       | Password           | Role          |
+| :----------- | :-------------------------- | :-------------------------- | :----------------- | :------------ |
+| `COMP-01`    | Acme Industrial Systems Ltd | `admin@acme-erp.local`      | `Admin123!@#`      | `ADMIN`       |
+| `COMP-01`    | Acme Industrial Systems Ltd | `clerk@acme-erp.local`      | `Clerk123!@#`      | `CLERK`       |
+| `COMP-01`    | Acme Industrial Systems Ltd | `accountant@acme-erp.local` | `Accountant123!@#` | `ACCOUNTANT`  |
+| `COMP-01`    | Acme Industrial Systems Ltd | `superadmin@acme-erp.local` | `SuperAdmin123!@#` | `SUPER_ADMIN` |
+| `COMP-02`    | Beta Distribution Corp      | `admin@beta-corp.local`     | `BetaAdmin123!@#`  | `ADMIN`       |
+
+### 7.2 Core Endpoints
+
+#### Authentication & Profile
+
+- `POST /api/v1/auth/login`: Authenticate with `{ companyCode, email, password }`. Returns `{ accessToken, tokenType, expiresIn, user }`.
+- `GET /api/v1/auth/me`: Retrieve current user profile, role, and company details (requires Bearer token).
+
+#### Tenant-Scoped Company Endpoints
+
+- `GET /api/v1/companies/current`: Returns the authenticated user's company profile.
+- `GET /api/v1/companies/:companyId`: Guarded company details (requires route `:companyId` to match user tenant).
+- `GET /api/v1/companies/:companyId/warehouses`: Tenant's active warehouse list.
+- `GET /api/v1/companies/:companyId/items`: Tenant's catalog item list with account mappings.
+
+---
+
+## 8. Quality Gates & Validation Commands
 
 Execute all validation checks across the entire monorepo from the root:
 
@@ -120,10 +155,10 @@ pnpm typecheck
 # 4. Validate Prisma database schema
 pnpm --filter @inventory-erp/backend prisma:validate
 
-# 5. Run all test suites (Jest unit/e2e + Vitest)
+# 5. Run all unit test suites (Jest backend + Vitest frontend)
 pnpm test
 
-# 6. Run backend e2e tests
+# 6. Run backend e2e tests against real PostgreSQL container
 pnpm --filter @inventory-erp/backend test:e2e
 
 # 7. Build both applications for production
@@ -132,31 +167,9 @@ pnpm build
 
 ---
 
-## 8. Development Seed Overview
+## 9. Next Phase: Phase 04
 
-The deterministic development seed (`pnpm db:seed`) provides:
-
-- **Tenant Company**: `COMP-01` ("Acme Industrial Systems Ltd", USD)
-- **Administrator User**: `admin@acme-erp.local` (Role: `ADMIN`)
-- **Warehouse**: `WH-MAIN` ("Central Distribution Warehouse")
-- **Supplier**: `SUP-001` ("Apex Raw Materials Corp")
-- **Chart of Accounts**:
-  - `1200`: `Inventory - Raw Materials` (ASSET, DEBIT)
-  - `2000`: `Accounts Payable` (LIABILITY, CREDIT)
-  - `2100`: `Inventory Received Not Invoiced (Accrual)` (LIABILITY, CREDIT)
-  - `5000`: `Cost of Goods Sold (COGS)` (EXPENSE, DEBIT)
-  - `5100`: `Inventory Adjustments / Variance` (EXPENSE, DEBIT)
-- **Accounting Period**: Current active fiscal month (Status: `OPEN`)
-- **Inventory Items**:
-  - `SKU-STEEL-10`: `Cold-Rolled Steel Sheet 10mm` (UOM: `KG`, Moving Average, $15.5000)
-  - `SKU-BOLT-M12`: `Industrial Hex Bolt M12x50` (UOM: `PCS`, Standard Cost, $2.2500)
-- **Initial Stock**: Initialized at 0 on-hand quantity and $0.0000 valuation.
-
----
-
-## 9. Next Phase: Phase 03
-
-**Phase 03 — Core Domain Services & Costing Engine**:
+**Phase 04 — Core Domain Services & Costing Engine**:
 
 - Implementing `CostingEngineService` (moving weighted-average formula & standard cost).
 - Implementing `PostingEngineService` (generating balanced General Ledger debit/credit entries).

@@ -1,7 +1,7 @@
 # Project Domain & Database Architecture Analysis
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Phase**: Phase 02 — Database Foundation & Prisma  
+**Phase**: Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy  
 **Author**: Senior Software Engineer & Software Architect
 
 ---
@@ -17,7 +17,9 @@ In classic accounting, when goods arrive at a warehouse:
 3. A matching financial accrual (Goods Received Not Invoiced / GR-IR) is recognized in the General Ledger.
 4. Unit costs are updated across inventory valuation layers.
 
-Phase 02 establishes the relational schema, foreign key constraints, indexes, and precision standards necessary to enforce these rules at the database engine level.
+Phase 02 established the relational schema, foreign key constraints, indexes, and precision standards necessary to enforce these rules at the database engine level.
+
+Phase 03 establishes the security perimeter, authentication foundation, role-based access control (RBAC), multi-tenant isolation barriers, and API hardening required to operate this system securely in an enterprise multi-company environment.
 
 ---
 
@@ -56,7 +58,7 @@ erDiagram
 ### 3.1 Tenant Root & Organization
 
 - **`Company`**: Represents the tenant boundary. Every critical entity carries a `companyId` foreign key. Compound unique constraints (e.g. `[companyId, sku]`, `[companyId, code]`, `[companyId, receiptNumber]`) prevent cross-tenant key collisions while allowing independent numbering sequences per company.
-- **`User`**: System actors with defined enterprise roles (`ADMIN`, `ACCOUNTANT`, `WAREHOUSE_MANAGER`, `CLERK`).
+- **`User`**: System actors with defined enterprise roles (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`, `CLERK`, `VIEWER`). Scoped per company via `@@unique([companyId, email])`.
 - **`Warehouse`**: Physical storage locations where stock balances reside.
 - **`Supplier`**: External procurement counterparties.
 
@@ -122,3 +124,54 @@ Floating-point arithmetic (`FLOAT`, `DOUBLE PRECISION`) is strictly forbidden fo
      - `@@unique([companyId, warehouseId, itemId])`
 3. **Index Strategy**:
    - High-cardinality search paths (e.g. `[companyId, status, receiptDate]`) are indexed to ensure sub-millisecond query execution even under millions of receipt records.
+
+---
+
+## 6. Phase 03 Security Architecture & Multi-Tenant Isolation
+
+### 6.1 Authentication & Security Pipeline
+
+```mermaid
+flowchart TD
+    ClientRequest[Incoming HTTP Request] --> CorrelationId[CorrelationIdMiddleware\nX-Correlation-ID assigned/echoed]
+    CorrelationId --> Helmet[Helmet Middleware\nSecurity Headers Content-Security-Policy HSTS etc.]
+    Helmet --> GlobalPipes[Global ValidationPipe\nwhitelist=true forbidNonWhitelisted=true]
+    GlobalPipes --> JwtAuthGuard[JwtAuthGuard\nPassport JWT Strategy]
+    JwtAuthGuard --> TokenVerify{Token Valid & Signed?}
+    TokenVerify -- No --> Err401[HTTP 401 Unauthorized]
+    TokenVerify -- Yes --> DBRevalidate{User & Company Active in DB?}
+    DBRevalidate -- No --> Err401
+    DBRevalidate -- Yes --> RolesGuard[RolesGuard\nRBAC Evaluation]
+    RolesGuard --> RoleCheck{Has Required Role or SUPER_ADMIN?}
+    RoleCheck -- No --> Err403[HTTP 403 Forbidden]
+    RoleCheck -- Yes --> CompanyGuard[CompanyAccessGuard\nTenant Boundary Check]
+    CompanyGuard --> TenantCheck{Route :companyId == User.companyId?}
+    TenantCheck -- No --> Err403
+    TenantCheck -- Yes --> ControllerService[Controller -> Service -> Prisma with companyId]
+    ControllerService --> ClientResponse[Sanitized JSON Response]
+
+    AllExceptionsFilter[AllExceptionsFilter] -. Catches unhandled errors .-> MaskedResponse[HTTP 500 Sanitized Error]
+```
+
+### 6.2 Password Security & Cryptography
+
+- **Algorithm**: **Argon2id** (the winner of the Password Hashing Competition, resistant to both GPU and side-channel attacks) implemented via `@node-rs/argon2`.
+- **Enumeration Prevention**: Login endpoint (`POST /api/v1/auth/login`) returns an identical, generic `HTTP 401: Invalid company, email, or password` message regardless of whether the company code, email, or password was incorrect.
+- **Token Format**: Standard JSON Web Tokens (JWT) signed with HMAC-SHA256 (`JWT_SECRET`), containing minimal claims (`sub`, `email`, `role`, `companyId`).
+- **Dynamic Revalidation**: Rather than trusting stale claims in the JWT indefinitely, every protected request verifies with the database that:
+  1. The user account still exists.
+  2. `user.isActive === true`.
+  3. The user's tenant `company.isActive === true`.
+
+### 6.3 Multi-Tenant Isolation Guarantees
+
+In multi-tenant ERP architectures, data leakage between tenants is catastrophic. Multi-tenancy in this system is enforced across three distinct layers:
+
+1. **Database Layer (Primary Invariant)**:
+   - Every tenant-owned table carries a non-nullable `companyId` foreign key.
+   - Compound indexes ensure uniqueness per tenant (e.g. `[companyId, code]`).
+2. **Framework & Guard Layer (Boundary Invariant)**:
+   - `CompanyAccessGuard` intercepts any route referencing `:companyId`. If `req.user.companyId !== params.companyId` (and the user is not `SUPER_ADMIN`), access is immediately denied with `HTTP 403 Forbidden`.
+3. **Application & Query Layer (Data Invariant)**:
+   - Application services explicitly scope all Prisma queries with `where: { companyId }`.
+   - Never accept an unverified tenant identifier from client request bodies.

@@ -18,6 +18,7 @@ datasource db {
 // ==============================================================================
 
 enum UserRole {
+  SUPER_ADMIN
   ADMIN
   ACCOUNTANT
   WAREHOUSE_MANAGER
@@ -118,14 +119,15 @@ model Company {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  companyId String
-  email     String
-  name      String
-  role      UserRole @default(CLERK)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  companyId    String
+  email        String
+  name         String
+  passwordHash String   @default("")
+  role         UserRole @default(CLERK)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   company               Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   receivedReceipts      Receipt[]       @relation("ReceiptReceiver")

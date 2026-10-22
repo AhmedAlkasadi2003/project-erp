@@ -355,4 +355,86 @@ flowchart TD
   $$\sum_{i=1}^{n} \text{Debit}_i = \sum_{i=1}^{n} \text{Credit}_i$$
   Calculated with `Prisma.Decimal` using 4-decimal precision (`ROUND_HALF_UP`).
 - **Validation-Only Endpoint**: `POST /api/v1/journal-entries/validate` runs this entire pipeline without modifying database state, enabling interactive UI balance verification before submission.
+
+---
+
+## 10. Phase 07 Atomic Receipt Posting, Inventory Integration & Safe Void Workflow
+
+### 10.1 The Atomic Posting Transaction Boundary
+
+Receipt posting is the central financial and physical integration boundary of the ERP. A single PostgreSQL ACID database transaction coordinates all mutations across the inventory sub-ledger and general ledger:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant Controller as ReceiptsController
+    participant Service as ReceiptPostingService
+    participant Ledger as InventoryLedgerService
+    participant GL as JournalValidatorService
+    participant DB as PostgreSQL 16 (ACID Tx)
+
+    Client->>Controller: POST /api/v1/receipts/:id/post (Optional Idempotency-Key)
+    Controller->>Service: postReceipt(companyId, userId, receiptId, dto, idempotencyKey)
+    Service->>DB: BEGIN Transaction (ReadCommitted)
+    Service->>DB: SELECT * FROM receipts WHERE id = :id FOR UPDATE
+    DB-->>Service: Locked Receipt Row (status == DRAFT)
+    Service->>DB: Check Warehouse & Supplier Active
+    Service->>DB: Check Accounting Period OPEN for postingDate
+    Service->>DB: Resolve Company GRN Clearing & Item Asset Accounts
+    Note over Service,DB: Deterministic Lock Order: Sort items by itemId ASC
+    loop For each receipt line (sorted)
+        Service->>Ledger: recordInboundMovement(line, tx)
+        Ledger->>DB: SELECT stock_balances FOR UPDATE
+        Ledger->>DB: UPDATE stock_balances (qty, totalValue, moving average)
+        Ledger->>DB: INSERT INTO stock_movements (receiptId, lineId)
+    end
+    Service->>GL: validate(companyId, postingDate, journalLines, tx)
+    GL-->>Service: Validated & Balanced (Debits == Credits)
+    Service->>DB: INSERT INTO journal_entries (status = POSTED, ref = receiptNumber)
+    Service->>DB: INSERT INTO journal_lines (Debit: Asset, Credit: Clearing)
+    Service->>DB: UPDATE receipts SET status = POSTED, postingDate, journalEntryId
+    Service->>DB: INSERT INTO audit_events (action = RECEIPT_POSTED)
+    Service->>DB: COMMIT Transaction
+    DB-->>Service: Success
+    Service-->>Controller: Created Post Result
+    Controller-->>Client: HTTP 200 OK
+```
+
+### 10.2 Concurrency, Deadlock Prevention & Idempotency
+
+1. **Row-Level Concurrency Protection**:
+   `SELECT ... FOR UPDATE` acquires an exclusive row lock on the target receipt inside the transaction. A concurrent attempt to post the same receipt waits on the lock, reads `status === 'POSTED'`, and is safely rejected with `HTTP 409 Conflict`.
+2. **Deterministic Multi-Row Lock Order**:
+   Receipt lines are sorted by `itemId: 'asc'` prior to executing stock balance updates. If two concurrent receipts attempt to post items $\{A, B\}$ simultaneously, both acquire locks in alphabetical order ($A \to B$), completely eliminating circular wait deadlocks.
+3. **Transient Retry Policy**:
+   PostgreSQL serialization conflicts (`40001`), deadlocks (`40P01`), and Prisma write conflicts (`P2034`) are intercepted by `withRetry`, which retries with bounded exponential backoff and random jitter (up to 3 attempts).
+4. **Idempotency Guarantees**:
+   The `Idempotency-Key` header is checked against `idempotency_records`. Replayed requests return cached responses immediately without creating duplicate movements or journals. Concurrent requests with the same key are safely deduplicated.
+
+### 10.3 Safe Void & Reversal Workflow
+
+Voiding a posted receipt is an audited financial reversal that restores balances without mutating original historical records:
+
+```mermaid
+flowchart TD
+    VoidRequest[POST /api/v1/receipts/:id/void] --> LockReceipt[Acquire Row Lock: SELECT receipt FOR UPDATE]
+    LockReceipt --> StatusCheck{Status == POSTED?}
+    StatusCheck -- No --> RejectStatus[Reject 400/409: Only POSTED Receipts Can Be Voided]
+    StatusCheck -- Yes --> StockSafetyCheck{On-Hand Qty >= Received Qty for All Lines?}
+    StockSafetyCheck -- No (Consumed) --> RejectStock[Reject 409 Conflict: Insufficient On-Hand Stock Goods Already Consumed]
+    StockSafetyCheck -- Yes --> PeriodCheck{Void Date in OPEN Accounting Period?}
+    PeriodCheck -- No --> RejectPeriod[Reject 400: Void Date in Closed or Missing Period]
+    PeriodCheck -- Yes --> ReversalTx[Execute Reversal Transaction]
+    ReversalTx --> CompensatingMovements[Create Compensating Movements: referenceType = STOCK_MOVEMENT_REVERSAL]
+    ReversalTx --> UpdateBalances[Deduct Balances & Recalculate Weighted Average Cost]
+    ReversalTx --> ReversingJournal[Post Reversing Journal: Debit GRN Clearing, Credit Inventory Asset]
+    ReversalTx --> VoidOriginalJournal[Update Original Journal: status = VOIDED]
+    ReversalTx --> VoidReceiptDoc[Update Receipt: status = VOIDED, voidedAt, voidReason]
+    VoidReceiptDoc --> RecordAudit[Create Audit Event: RECEIPT_VOIDED]
+    RecordAudit --> CommitTx[COMMIT Transaction]
+```
+
+- **Stock Depletion Defense**: If goods received on a receipt were subsequently issued, shipped, or consumed, voiding the receipt would drive physical stock below zero and corrupt financial valuation. The system strictly checks $Q_{\text{onhand}} \ge Q_{\text{received}}$ for every line. If violated, voiding is blocked with `HTTP 409 Conflict`.
+- **Append-Only Immutability**: Original stock movements and journal entries remain untouched. Compensating movements and reversing journal entries are posted, maintaining a pristine, auditable transaction ledger.
 $$

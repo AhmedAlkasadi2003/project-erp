@@ -203,9 +203,14 @@ export class JournalEntriesService {
     };
   }
 
-  private async generateEntryNumber(companyId: string, entryDate: Date): Promise<string> {
+  async generateEntryNumber(
+    companyId: string,
+    entryDate: Date,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const client = tx || this.prisma;
     const year = entryDate.getFullYear();
-    const count = await this.prisma.journalEntry.count({
+    const count = await client.journalEntry.count({
       where: {
         companyId,
         entryDate: {

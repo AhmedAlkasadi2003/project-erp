@@ -4,7 +4,7 @@ This document records the confirmed assumptions, resolved technical decisions, a
 
 ---
 
-## 1. Confirmed Architectural Decisions (Phases 01, 02, 03, 04, 05 & 06)
+## 1. Confirmed Architectural Decisions (Phases 01, 02, 03, 04, 05, 06 & 07)
 
 1. **Monorepo Architecture**:
    - The system is organized as a modular monorepo managed with `pnpm` workspaces (`backend` and `frontend`).
@@ -90,25 +90,44 @@ This document records the confirmed assumptions, resolved technical decisions, a
      - All referenced accounts must belong to the same tenant and be active.
      - Transaction date must fall within an open accounting period for the tenant.
 
+9. **Atomic Receipt Posting & Safe Void Workflow (Phase 07)**:
+   - **Atomic PostgreSQL Transaction Boundary**:
+     - Receipt status transition (`DRAFT` $\to$ `POSTED`), inventory movements, stock balance locks, moving weighted-average cost updates, double-entry journal generation, and audit logging commit atomically inside a single ACID database transaction.
+     - Any validation error, closed accounting period, or concurrency collision triggers complete rollback, guaranteeing that no partial financial or stock changes ever leak.
+   - **Double-Entry General Ledger Integration**:
+     - Debit: SKU Inventory Asset Account (`Item.assetAccountId`) for each line's valuation.
+     - Credit: Accrued Inventory GRN Clearing Account (`Company.grnClearingAccountId`) for receipt total valuation.
+     - Mathematical balance strictly enforced: $\sum \text{Debit} = \sum \text{Credit} = \text{Receipt Total}$.
+     - One-to-one unique link between `Receipt.journalEntryId` and `JournalEntry.id`.
+   - **Concurrency Control & Deadlock Prevention**:
+     - Explicit row-level locking on receipt (`SELECT ... FOR UPDATE`) prevents concurrent postings or races between post and void.
+     - Deterministic lock order on stock balances (`itemId: 'asc'`) prevents circular wait deadlocks across concurrent multi-item receipts.
+     - Transient concurrency conflicts (`40001`, `40P01`, `P2034`) handled by bounded jittered retry loop.
+   - **Idempotency Contract**:
+     - Supports `Idempotency-Key` header with server-managed `IdempotencyRecord` table.
+     - Repeated requests with same key return cached response without duplicate stock movements or journals.
+     - Concurrent requests with same key are safely deduplicated (`409 Conflict`).
+   - **Safe Void Invariant (Stock Consumption Defense)**:
+     - A posted receipt can be voided (`POST /api/v1/receipts/:id/void`) only if available on-hand stock is $\ge$ received quantity.
+     - If stock has been issued or consumed ($Q_{\text{onhand}} < Q_{\text{received}}$), voiding is strictly blocked (`HTTP 409 Conflict`) to prevent negative stock and corrupted balance sheets.
+     - Compensating reversing movements (`referenceType = 'STOCK_MOVEMENT_REVERSAL'`) and a reversing journal entry (Debit GRN Clearing, Credit Inventory Asset) are posted within an open accounting period.
+     - Original journal entry status is transitioned to `VOIDED`; receipt status transitions to `VOIDED` with `voidedAt`, `voidedById`, and `voidReason`.
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item                     | Impact on Phase 07          | Architectural Recommendation                                                                                                                                                       |
-| ------ | ----------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Receipt Posting Atomic Orchestration**        | Phase 07 Receipt Posting    | Wrap receipt status transition (`DRAFT -> POSTED`), inventory ledger movements, stock balance locks, and GL journal entry generation in a single atomic PostgreSQL transaction.    |
-| **Q2** | **Receipt Cancellation & Reversals**            | Phase 07 Posting Reversals  | A posted receipt cannot be deleted. Cancellation must atomically generate compensating stock movements and an offsetting reversing journal entry within an open accounting period. |
-| **Q3** | **Landed Cost Allocation**                      | Phase 07 Costing Engine     | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and GRN clearing or freight absorption accounts.  |
-| **Q4** | **Sub-ledger to General Ledger Reconciliation** | Phase 07/08 Audit & Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.                             |
+| #      | Question / Requirement Item                     | Impact on Phase 08          | Architectural Recommendation                                                                                                                            |
+| ------ | ----------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | **Frontend UI Receipt Workflow State Machine**  | Phase 08 Frontend UI        | Implement interactive state indicators: Draft, Posted, Voided, with modal confirmation displaying preview of expected debits, credits, and balances.    |
+| **Q2** | **Landed Cost Allocation**                      | Phase 08/09 Costing Engine  | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and clearing accounts. |
+| **Q3** | **Sub-ledger to General Ledger Reconciliation** | Phase 08/09 Audit & Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.  |
 
 ---
 
 ## 3. Decisions Deferred to Later Phases
 
-1. **Receipt Posting & GL Posting Workflow (Phase 07)**:
-   - Endpoint `POST /api/v1/receipts/:id/post` orchestrating stock movement creation, moving weighted average updates, and journal entry generation.
-   - Endpoint `POST /api/v1/receipts/:id/cancel` orchestrating reversals.
-2. **Frontend UI Pages (Phase 08)**:
-   - Warehouse receipt entry UI, line reconciliation, receipt posting dialogs, stock balance inquiry, and journal entry audit views.
-3. **Advanced Financial Reporting (Phase 09)**:
+1. **Frontend UI Pages & Interactive ERP Workflows (Phase 08)**:
+   - Warehouse receipt entry UI, line reconciliation, receipt posting dialog with debit/credit preview, stock balance inquiry, voiding workflow with reason capture, and journal entry audit views.
+2. **Advanced Financial Reporting & Trial Balance (Phase 09)**:
    - Trial Balance, Balance Sheet, Income Statement, and GL-to-Subledger reconciliation reports.

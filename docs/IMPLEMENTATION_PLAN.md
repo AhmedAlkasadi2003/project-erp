@@ -23,7 +23,8 @@ flowchart LR
   style P4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P5 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P6 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
-  style P7 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
+  style P7 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P8 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
 ```
 
 ---
@@ -164,33 +165,45 @@ flowchart LR
 
 ---
 
-## Phase 07: Receipt Posting Orchestration & General Ledger Posting (NEXT PHASE)
+## Phase 07: Atomic Receipt Posting, Inventory Integration & Safe Void Workflow (COMPLETED)
 
-- **Objective**: Implement atomic receipt posting orchestration (`DRAFT` $\to$ `POSTED`), automated double-entry GL journal generation, accounting period controls, and idempotency protection.
-- **Key Deliverables to Implement**:
-  - `PostingEngineService`:
-    - Generates balanced double-entry General Ledger journal records:
-      - **Debit**: Item Inventory Asset Account (`Item.assetAccountId`) for line valuation.
-      - **Credit**: GRN Clearing Account (`Company.grnClearingAccountId`) for total receipt amount.
-    - Strict validation invariant: $\sum \text{Debit} = \sum \text{Credit}$ (throws domain error if variance $\neq 0$).
-  - `ReceiptPostingService`:
-    - Orchestrates atomic state transition (`DRAFT` $\to$ `POSTED`) inside a PostgreSQL ACID transaction.
-    - Atomically updates `StockBalance`, writes `StockMovement` records, generates `JournalEntry`, and updates `Receipt` status.
-    - Enforces idempotency via `IdempotencyRecord`.
-  - Accounting Period Verification:
-    - Verifies that `receiptDate` falls within an open accounting period (`AccountingPeriod.status === OPEN`).
-  - Endpoints:
-    - `POST /api/v1/receipts/:id/post`: Atomic post endpoint with idempotency key support.
-    - `POST /api/v1/receipts/:id/cancel`: Cancellation and reversing entry workflow.
+- **Objective**: Implement atomic receipt posting orchestration (`DRAFT` $\to$ `POSTED`), automated double-entry GL journal generation, stock balance and costing updates, and safe void reversal workflows.
+- **Implemented Features**:
+  - **Prisma Schema Enhancements**:
+    - Added `VOIDED` to `ReceiptStatus` enum.
+    - Added `postedById`, `voidedById`, `voidedAt`, and `voidReason` to `Receipt`.
+    - Added relations `postedByUser` and `voidedByUser` on `Receipt`.
+    - Added indexes on `receiptId` and `receiptLineId` on `StockMovement`.
+    - Applied migration `20261022131957_add_receipt_posting_void_and_indexes`.
+  - **Atomic Posting Service & Controller** (`POST /api/v1/receipts/:id/post`):
+    - Atomic PostgreSQL transaction boundary coordinating receipt state, inventory movements, stock balance mutations, moving average updates, double-entry GL journal creation, and audit trail.
+    - Exclusive row lock `SELECT ... FOR UPDATE` on receipt row prevents double posting and races.
+    - Deterministic lock order on stock balances (`itemId: 'asc'`) eliminates circular wait deadlocks across concurrent multi-SKU receipts.
+    - Bounded exponential backoff with jitter retry wrapper for transient PostgreSQL serialization/deadlock conflicts.
+    - Double-entry General Ledger balancing: Debit SKU Inventory Asset (`Item.assetAccountId`), Credit GRN Clearing (`Company.grnClearingAccountId`), enforcing $\sum \text{Debit} = \sum \text{Credit}$.
+    - Idempotency support via `Idempotency-Key` header with server-managed `IdempotencyRecord`.
+  - **Safe Void Workflow** (`POST /api/v1/receipts/:id/void`):
+    - Enforces critical stock consumption defense: checks on-hand stock $\ge$ received quantity. If stock has been issued ($Q_{\text{onhand}} < Q_{\text{received}}$), voiding is rejected with HTTP 409 Conflict.
+    - Enforces open accounting period for the void date.
+    - Creates compensating reversing movements (`referenceType = 'STOCK_MOVEMENT_REVERSAL'`) and deducts stock at moving average cost.
+    - Creates balanced reversing General Ledger journal entry (Debit GRN Clearing, Credit Inventory Asset).
+    - Transitions original journal entry status to `VOIDED`.
+    - Transitions receipt status to `VOIDED` with `voidedAt`, `voidedById`, and `voidReason`.
+  - **Automated Test Coverage**:
+    - 1 new unit test suite: `receipt-posting.service.spec.ts` (10/10 tests passing).
+    - 1 new integration E2E suite: `test/receipt-posting-and-void.e2e-spec.ts` (14/14 tests passing on live PostgreSQL container, including concurrency races and stock depletion defense).
+    - Total codebase test count: **226 automated tests passing with 100% green**.
+- **Exit Status**: 100% verified against live PostgreSQL container. Zero frontend UI leaked into this phase.
 
 ---
 
-## Phase 08: Frontend User Interface & Enterprise Workflows
+## Phase 08: Frontend User Interface & Enterprise Workflows (NEXT PHASE)
 
 - **Objective**: Deliver a clean, professional React UI for warehouse clerks and accountants.
 - **Key Modules**:
   - Receipt Entry Form: Dynamic line-item grid, auto-calculating totals, vendor selection.
   - Posting Confirmation Modal: Summary preview showing expected debits and credits before committing.
+  - Void Reason Modal: Reversal confirmation dialog with audit reason capture.
   - Audit Trail View: Drill-down from receipt to corresponding general ledger journal entry.
   - Inventory Overview: Real-time stock valuation and unit cost display.
 

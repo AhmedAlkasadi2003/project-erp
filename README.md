@@ -19,7 +19,8 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 04 — Inventory Receipts Drafts & Management API**: ✅ **COMPLETED** (Complete backend API for creating, listing, retrieving, updating headers, reconciling lines, and deleting draft receipts, with server-side Decimal precision, status guards, and multi-tenant isolation).
 - **Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing**: ✅ **COMPLETED** (Moving weighted-average costing engine, PostgreSQL row-level concurrency locking, initial-balance race prevention, zero residual penny depletion, append-only stock movements, compensating reversals, balance queries and reconciliation API).
 - **Phase 06 — Accounting Foundation, Chart of Accounts & Accounting Periods**: ✅ **COMPLETED** (Chart of Accounts with tree hierarchy, cycle detection, accounting periods with boundary/overlap validation, company GRN clearing configuration, double-entry validation engine, draft journal entry management, 202/202 passing automated tests).
-- **Phase 07 — Receipt Posting Orchestration & General Ledger Posting**: ⏳ **NEXT UP** (Atomic receipt post transition `DRAFT` $\to$ `POSTED`, automated double-entry GL journal creation `1200` vs `2100`, accounting periods, idempotency keys).
+- **Phase 07 — Atomic Receipt Posting, Inventory Integration & Safe Void Workflow**: ✅ **COMPLETED** (Atomic PostgreSQL transaction boundary, row-level locks, stock balance mutations, moving weighted-average cost updates, double-entry GL journal generation, idempotency key support, safe void reversal workflow with stock depletion defense, 226/226 passing automated tests).
+- **Phase 08 — Frontend User Interface & Enterprise Workflows**: ⏳ **NEXT UP** (React 19 UI, receipt entry forms, posting confirmation modal, void reason dialog, real-time stock and journal drill-downs).
 
 ---
 
@@ -101,6 +102,9 @@ All endpoints are served under the `/api/v1` global prefix.
 - `PATCH /api/v1/receipts/:id/lines/:lineId`: Update a specific line item in a draft receipt.
 - `DELETE /api/v1/receipts/:id/lines/:lineId`: Remove a specific line item (guarantees at least 1 line remains).
 - `DELETE /api/v1/receipts/:id`: Delete a draft receipt (cascading its draft lines). Deletion of `POSTED` or `CANCELLED` receipts is blocked.
+- `POST /api/v1/receipts/:id/post`: Atomically post a draft receipt to inventory and General Ledger with row-level locks, moving average updates, balanced double-entry journal generation, and optional `Idempotency-Key` header.
+- `POST /api/v1/receipts/:id/void`: Safely void a posted receipt, verifying on-hand inventory has not been consumed, creating compensating reversing stock movements, posting reversing journal entry, and updating status to `VOIDED`.
+- `POST /api/v1/receipts/:id/cancel`: REST alias for voiding a posted receipt.
 
 #### Sample Create Draft Receipt Request:
 
@@ -227,12 +231,12 @@ pnpm build
 
 ---
 
-## 9. Next Phase: Phase 07
+## 9. Next Phase: Phase 08
 
-**Phase 07 — Receipt Posting Orchestration & General Ledger Posting**:
+**Phase 08 — Frontend User Interface & Enterprise Workflows**:
 
-- Implementing `PostingEngineService` (generating balanced double-entry General Ledger debit/credit records: Item Asset Account Debit vs GRN Clearing Account Credit).
-- Implementing `ReceiptPostingService` (atomic PostgreSQL ACID transaction updating stock balances, movements, GL journal entry, and receipt status from `DRAFT` to `POSTED`).
-- Accounting period verification (verifying receipt date against active open fiscal period).
-- Idempotency protection via `IdempotencyRecord`.
-- Receipt cancellation and reversing entry workflow.
+- Implementing the React 19 + Vite web client interface.
+- Warehouse receipt entry UI with dynamic line editing and auto-calculated totals.
+- Posting confirmation dialog showing live preview of debits, credits, and account codes.
+- Safe void workflow dialog capturing the business reason for audit records.
+- Real-time stock balance inquiry and General Ledger journal entry drill-down views.

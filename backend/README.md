@@ -4,7 +4,7 @@
 
 The `backend` workspace provides the server-side API foundation for the **Inventory Receipts with Costing and GL Posting** system. It is built with **NestJS 11**, **TypeScript (Strict Mode)**, and **Prisma ORM 6** connecting to **PostgreSQL 16**.
 
-> **Phase 06 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, draft receipts management API, inventory ledger & moving average costing engine, and **accounting foundation** (`AccountsService`, `AccountingPeriodsService`, `InventoryAccountsService`, `JournalValidatorService`, `JournalEntriesService`). Receipt posting orchestration and automatic GL posting will be implemented in Phase 07.
+> **Phase 07 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, draft receipts management API, inventory ledger & moving average costing engine, accounting foundation (`AccountsService`, `AccountingPeriodsService`, `InventoryAccountsService`, `JournalValidatorService`, `JournalEntriesService`), and the complete **atomic receipt posting and safe voiding engine** (`ReceiptPostingService`) with row-level concurrency locking, idempotency support, GL journal entry integration, and compensating stock ledger reversals.
 
 ---
 
@@ -28,7 +28,8 @@ backend/
 ├── prisma/
 │   ├── migrations/             # Applied SQL migrations
 │   │   ├── 20261022084335_init_database_foundation/
-│   │   └── 20261022090116_add_auth_credentials_and_super_admin/
+│   │   ├── 20261022090116_add_auth_credentials_and_super_admin/
+│   │   └── 20261022131957_add_receipt_posting_void_and_indexes/
 │   ├── schema.prisma           # Complete relational schema (17 models, 11 enums)
 │   └── seed.ts                 # Idempotent development seed (companies, users, accounts, items)
 ├── src/
@@ -68,8 +69,11 @@ backend/
 │   │   ├── inventory-ledger.service.spec.ts
 │   │   ├── stock-balance.service.ts    # Atomic upsert, SELECT FOR UPDATE locking & audit
 │   │   └── stock-balance.service.spec.ts
-│   ├── receipts/               # Inventory Receipts Draft Management (Phase 04)
-│   │   ├── dto/                # Create, Update, ReplaceLines, and Query DTOs
+│   ├── receipts/               # Inventory Receipts & Posting Management (Phase 04 & 07)
+│   │   ├── dto/                # Create, Update, Post, Void, and Query DTOs
+│   │   ├── posting/            # Atomic posting & voiding orchestration
+│   │   │   ├── receipt-posting.service.ts
+│   │   │   └── receipt-posting.service.spec.ts
 │   │   ├── utils/              # DecimalMath utility and custom decimal validators
 │   │   ├── receipts.controller.ts
 │   │   ├── receipts.module.ts
@@ -93,6 +97,7 @@ backend/
 │   ├── receipts.e2e-spec.ts    # Full draft lifecycle, validation, and precision E2E suite
 │   ├── inventory-ledger-and-costing.e2e-spec.ts # Ledger, concurrency lock, and costing E2E suite
 │   ├── accounting-foundation.e2e-spec.ts # Chart of accounts, periods, and journal E2E suite
+│   ├── receipt-posting-and-void.e2e-spec.ts # Atomic receipt posting, GL, idempotency & void E2E suite
 │   └── jest-e2e.json           # Jest E2E test runner configuration
 ├── .env.example                # Example environment variables
 ├── .gitignore                  # Backend-specific ignore rules

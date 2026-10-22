@@ -1,7 +1,7 @@
 # Requirements Verification & Compliance Checklist
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Current Phase**: Phase 06 — Accounting Foundation, Chart of Accounts & Accounting Periods  
+**Current Phase**: Phase 07 — Atomic Receipt Posting, Inventory Integration & Safe Void Workflow  
 **Status**: 100% Verified & Passing
 
 ---
@@ -140,12 +140,33 @@
 
 ---
 
-## 7. Forward Phases Roadmap (Scope Enforcement)
+## 7. Phase 07: Atomic Receipt Posting, Inventory Integration & Safe Void Workflow (Completed)
 
-| Phase                         | Description                                                                                           | Status in Phase 06  | Target Phase |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------- | ------------ |
-| **Receipt Posting & GL Post** | Atomic receipt posting (`DRAFT` $\to$ `POSTED`), stock movement creation, GL journal entry generation | **NOT IMPLEMENTED** | Phase 07     |
-| **Receipt Post Reversals**    | Reversal/cancellation workflow generating compensating stock movements and reversing journal entries  | **NOT IMPLEMENTED** | Phase 07     |
-| **Frontend UI Foundation**    | Receipt management, line entry, warehouse selection, and status badges                                | **NOT IMPLEMENTED** | Phase 08     |
-| **Posting UI & GL Inquiries** | Receipt posting dialogs, stock balance inquiry, and journal entry views                               | **NOT IMPLEMENTED** | Phase 08     |
-| **Financial Reconciliation**  | Trial balance reports, GL-to-subledger balance audits, and full lifecycle E2E suite                   | **NOT IMPLEMENTED** | Phase 09     |
+| Requirement                      | Implementation Details                                                                                                                                      | Status   | Verification Evidence                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| **Schema Migration**             | Added `VOIDED` to `ReceiptStatus` enum, added `postedById`, `voidedById`, `voidedAt`, and `voidReason` to `Receipt`, indexed movements on receipt/line      | **PASS** | Migration `20261022131957_add_receipt_posting_void_and_indexes` applied cleanly        |
+| **Atomic Posting Endpoint**      | `POST /api/v1/receipts/:id/post` coordinates receipt state, inventory ledger, stock balances, moving average costs, GL journal, and audit in single Tx      | **PASS** | Verified in `receipt-posting.service.spec.ts` & `receipt-posting-and-void.e2e-spec.ts` |
+| **Single & Multi-line Posting**  | Processes 1 or multiple receipt lines, updating each item's stock balance, moving average cost, and debiting respective inventory asset accounts            | **PASS** | Verified in E2E tests with exact mathematical asset & clearing sums                    |
+| **Double-Entry Balance**         | Reusable `JournalValidatorService` enforces exact balance $\sum \text{Debit} = \sum \text{Credit}$ at 4 decimals (`ROUND_HALF_UP`) before persisting        | **PASS** | Verified in unit and E2E test suites (zero imbalance allowed)                          |
+| **Open Period Validation**       | Enforces transaction date falls within active `OPEN` accounting period; rejects postings to closed periods or missing periods with HTTP 400 Bad Request     | **PASS** | Verified in E2E test `should reject posting and leave no partial changes` (closed/no)  |
+| **Accounts Resolution**          | `resolveReceiptAccounts` validates company GRN clearing account (`LIABILITY`) and item asset accounts (`ASSET`), rejecting missing or inactive accounts     | **PASS** | Verified in unit and E2E test suites                                                   |
+| **Row-Level Concurrency Lock**   | `SELECT ... FOR UPDATE` on receipt row inside transaction prevents concurrent double postings or races between post and void                                | **PASS** | Parallel stress test verified in `receipt-posting-and-void.e2e-spec.ts` (1 won, 1 409) |
+| **Deterministic Lock Order**     | Lines sorted by `itemId: 'asc'` before balance lock acquisition eliminates circular wait deadlocks across concurrent multi-SKU receipts                     | **PASS** | Verified in concurrent multi-receipt parallel test                                     |
+| **Transient Retry Policy**       | Bounded exponential backoff with random jitter handles PostgreSQL serialization conflicts (`40001`), deadlocks (`40P01`), and write conflicts (`P2034`)     | **PASS** | `withRetry` implemented and tested in `receipt-posting.service.ts`                     |
+| **Idempotency Protection**       | Supports `Idempotency-Key` header via `IdempotencyRecord`; returns cached response on completion, prevents duplicate stock movements or journals            | **PASS** | Verified in unit tests and E2E tests                                                   |
+| **Safe Void Endpoint**           | `POST /api/v1/receipts/:id/void` verifies on-hand stock $\ge$ received quantity, reverses movements, balances, journals, and updates status to `VOIDED`     | **PASS** | Verified in `receipt-posting-and-void.e2e-spec.ts`                                     |
+| **Stock Depletion Defense**      | If on-hand stock is insufficient ($Q_{\text{onhand}} < Q_{\text{received}}$), void is rejected with HTTP 409 Conflict; prevents negative stock/corrupted GL | **PASS** | Verified in E2E test `should reject voiding if subsequent issues make stock insuff`    |
+| **Reversing Journal Posting**    | Creates balanced reversing journal entry (Debit GRN Clearing, Credit Inventory Asset) and marks original journal status as `VOIDED`                         | **PASS** | Verified in E2E test suite                                                             |
+| **Compensating Stock Movements** | Creates linked `StockMovement` with `referenceType = 'STOCK_MOVEMENT_REVERSAL'`, updates stock balance, resets value to 0 if fully depleted                 | **PASS** | Verified in E2E test suite                                                             |
+| **Zero Partial Mutations**       | All failures trigger full PostgreSQL transaction rollback; receipt remains `DRAFT`, inventory and accounting untouched                                      | **PASS** | Verified across all failure test scenarios                                             |
+| **Audit Trail Preservation**     | Records `RECEIPT_POSTED` and `RECEIPT_VOIDED` events in `audit_events` with detailed actor, timestamp, and changes payload                                  | **PASS** | Verified in unit and E2E test suites                                                   |
+
+---
+
+## 8. Forward Phases Roadmap (Scope Enforcement)
+
+| Phase                         | Description                                                                                     | Status in Phase 07  | Target Phase |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- | ------------------- | ------------ |
+| **Frontend UI Foundation**    | Receipt management, line entry, warehouse selection, and status badges                          | **NOT IMPLEMENTED** | Phase 08     |
+| **Posting UI & GL Inquiries** | Receipt posting confirmation modal, stock balance inquiry, void reason dialog, and journal view | **NOT IMPLEMENTED** | Phase 08     |
+| **Financial Reconciliation**  | Trial balance reports, GL-to-subledger balance audits, and full lifecycle E2E suite             | **NOT IMPLEMENTED** | Phase 09     |

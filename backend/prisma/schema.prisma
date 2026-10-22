@@ -35,6 +35,7 @@ enum ReceiptStatus {
   DRAFT
   POSTED
   CANCELLED
+  VOIDED
 }
 
 enum StockMovementType {
@@ -133,6 +134,8 @@ model User {
 
   company               Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
   receivedReceipts      Receipt[]       @relation("ReceiptReceiver")
+  postedReceipts        Receipt[]       @relation("ReceiptPoster")
+  voidedReceipts        Receipt[]       @relation("ReceiptVoider")
   stockMovements        StockMovement[] @relation("StockMovementUser")
   createdJournalEntries JournalEntry[]  @relation("JournalEntryCreator")
   postedJournalEntries  JournalEntry[]  @relation("JournalEntryPoster")
@@ -352,7 +355,11 @@ model Receipt {
   status           ReceiptStatus @default(DRAFT)
   receiptDate      DateTime      @default(now())
   postingDate      DateTime?
+  voidedAt         DateTime?
+  voidReason       String?
   receivedByUserId String
+  postedById       String?
+  voidedById       String?
   journalEntryId   String?       @unique
   subtotal         Decimal       @default(0) @db.Decimal(19, 4)
   taxAmount        Decimal       @default(0) @db.Decimal(19, 4)
@@ -366,6 +373,8 @@ model Receipt {
   warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   supplier       Supplier        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   receivedByUser User            @relation("ReceiptReceiver", fields: [receivedByUserId], references: [id], onDelete: Restrict)
+  postedByUser   User?           @relation("ReceiptPoster", fields: [postedById], references: [id], onDelete: Restrict)
+  voidedByUser   User?           @relation("ReceiptVoider", fields: [voidedById], references: [id], onDelete: Restrict)
   journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   lines          ReceiptLine[]
   stockMovements StockMovement[]
@@ -429,6 +438,8 @@ model StockMovement {
   @@index([companyId, itemId, warehouseId, movementDate])
   @@index([companyId, movementType, movementDate])
   @@index([referenceType, referenceId])
+  @@index([receiptId])
+  @@index([receiptLineId])
   @@map("stock_movements")
 }
 

@@ -520,4 +520,74 @@ describe('Inventory Ledger, Stock Balances & Costing (e2e)', () => {
       await prisma.receipt.delete({ where: { id: draftReceipt.body.id } });
     });
   });
+
+  describe('6. Item Stock Card (Bin Card / Ledger Card) Endpoint', () => {
+    it('GET /api/v1/items/:id/stock-card should return movement history with running quantity and average cost', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/items/${itemBoltId}/stock-card`)
+        .set('Authorization', `Bearer ${company1Token}`)
+        .expect(200);
+
+      expect(res.body.item.id).toBe(itemBoltId);
+      expect(res.body.item.sku).toBeDefined();
+      expect(res.body.openingBalance).toBeDefined();
+      expect(res.body.closingBalance).toBeDefined();
+      expect(res.body.currentBalances).toBeInstanceOf(Array);
+      expect(res.body.movements).toBeInstanceOf(Array);
+      expect(res.body.movements.length).toBeGreaterThan(0);
+
+      // Verify running balances are present on each movement entry
+      const firstMovement = res.body.movements[0];
+      expect(firstMovement.runningQuantity).toBeDefined();
+      expect(firstMovement.runningAverageCost).toBeDefined();
+      expect(firstMovement.warehouse.code).toBeDefined();
+    });
+
+    it('GET /api/v1/inventory/items/:id/stock-card alias should return identical stock card data', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/inventory/items/${itemBoltId}/stock-card`)
+        .set('Authorization', `Bearer ${company1Token}`)
+        .expect(200);
+
+      expect(res.body.item.id).toBe(itemBoltId);
+      expect(res.body.movements).toBeInstanceOf(Array);
+    });
+
+    it('should support warehouse filtering and date filtering on stock card', async () => {
+      const res = await request(app.getHttpServer())
+        .get(
+          `/api/v1/items/${itemBoltId}/stock-card?warehouseId=${warehouse1Id}&from=2026-01-01&to=2026-12-31`,
+        )
+        .set('Authorization', `Bearer ${company1Token}`)
+        .expect(200);
+
+      expect(res.body.filters.warehouseId).toBe(warehouse1Id);
+      expect(res.body.filters.from).toBe('2026-01-01');
+      expect(res.body.filters.to).toBe('2026-12-31');
+      expect(res.body.openingBalance).toBeDefined();
+      expect(res.body.closingBalance).toBeDefined();
+    });
+
+    it('should reject invalid date range where from date is after to date (HTTP 400)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/items/${itemBoltId}/stock-card?from=2026-12-31&to=2026-01-01`)
+        .set('Authorization', `Bearer ${company1Token}`)
+        .expect(400);
+
+      expect(res.body.message).toContain('earlier than or equal to');
+    });
+
+    it('should enforce multi-tenant isolation: Company 1 user cannot access Company 2 item stock card', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/v1/items/${itemBetaId}/stock-card`)
+        .set('Authorization', `Bearer ${company1Token}`)
+        .expect(404);
+
+      // But Company 2 user CAN access it
+      await request(app.getHttpServer())
+        .get(`/api/v1/items/${itemBetaId}/stock-card`)
+        .set('Authorization', `Bearer ${company2Token}`)
+        .expect(200);
+    });
+  });
 });

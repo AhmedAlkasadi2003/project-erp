@@ -24,6 +24,7 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 09 — Backend Integration Testing, Concurrency & Reliability Hardening**: ✅ **COMPLETED** (Live PostgreSQL concurrency test suite verifying double posting locks, concurrent moving average stock valuation, initial-balance upsert race safety, safe void stock consumption defense, concurrent outbox worker claiming, 264/264 passing automated tests).
 - **Phase 10 — Frontend Integration & Complete User Workflows**: ✅ **COMPLETED** (Enterprise React 19 + TypeScript single-page application integrated with NestJS backend, token-based session management, reference data selectors, dynamic receipt line editing, live server-accurate total calculation, atomic posting modal with debit/credit impact preview, and safe void dialog with mandatory audit reason).
 - **Phase 11 — UX Polish, Localization, Accessibility & Browser Verification**: ✅ **COMPLETED** (Bilingual English & Arabic localization with instant toggle and dynamic RTL/LTR direction, WCAG 2.2 AA compliant contrast, focus traps and keyboard navigation, responsive layout across mobile/tablet/desktop viewports, 278/278 passing automated tests, 0 lint warnings, production build verified).
+- **Phase 12 — Final Production Readiness, Assignment Compliance & Delivery Audit**: ✅ **COMPLETED** (Comprehensive compliance audit, Item Stock Card API implemented with opening balance, running quantity, and moving average cost, strict 2-page DESIGN.md, full AI assistance disclosure, and 287/287 passing automated tests across 29 test suites).
 
 ---
 
@@ -139,12 +140,14 @@ curl -X POST http://localhost:4000/api/v1/receipts \
   }'
 ```
 
-### 5.4 Inventory Ledger & Balances (Phase 05)
+### 5.4 Inventory Ledger, Balances & Stock Card (Phases 05 & 12)
 
 - `GET /api/v1/inventory/balances`: List tenant stock balances with pagination (`page`, `limit`), sorting (`sortBy`, `sortOrder`), search (`search`), warehouse (`warehouseId`), and item (`itemId`) filters.
 - `GET /api/v1/inventory/balances/:warehouseId/:itemId`: Retrieve real-time stock balance snapshot (`quantityOnHand`, `totalValue`, `averageCost`, `version`).
 - `GET /api/v1/inventory/movements`: Query append-only stock movement ledger with pagination, type filter (`movementType`), warehouse filter, item filter, and date ranges.
 - `GET /api/v1/inventory/reconcile/:warehouseId/:itemId`: Real-time read-only audit comparing live materialized balance snapshot against total aggregated ledger movements. Returns `{ inSync: true/false, deltaQuantity, deltaTotalValue }`.
+- `GET /api/v1/items/:id/stock-card`: Formal Item Stock Card (Bin Card / Ledger Card) returning opening balance, chronological movement history, running quantity (`runningQuantity`), running average cost (`runningAverageCost`), closing balance, and active warehouse snapshots. Supports `from`, `to`, `warehouseId`, `page`, and `limit` query parameters.
+- `GET /api/v1/inventory/items/:id/stock-card`: REST alias for item stock card under the inventory namespace.
 
 ### 5.5 Accounting & General Ledger (Phase 06)
 
@@ -180,12 +183,12 @@ curl -X POST http://localhost:4000/api/v1/receipts \
 # 1. Install all monorepo dependencies
 pnpm install
 
-# 2. Configure environment files
+# 2. Configure environment files (safe development defaults provided)
 cp .env.example .env
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 
-# 3. Start PostgreSQL container in background (port 5434)
+# 3. Start PostgreSQL container in background (mapped to host port 5434)
 pnpm docker:up
 
 # 4. Apply Prisma database migrations
@@ -194,6 +197,12 @@ pnpm db:migrate
 # 5. Seed development master data (idempotent)
 pnpm db:seed
 ```
+
+### 6.1 Common Setup Issues & Troubleshooting
+
+- **PostgreSQL Port Collision (Port 5432 already in use)**: Local systems often run a local PostgreSQL service on default port `5432`. This ERP project maps its Docker container to host port **`5434`** to prevent collisions. Verify `DATABASE_URL` in `.env` and `backend/.env` points to `localhost:5434`.
+- **Database Connection Waiting**: On initial container startup, PostgreSQL may take 2-3 seconds to initialize. If `pnpm db:migrate` fails on the first second, wait for `docker compose ps` to report `(healthy)` and rerun `pnpm db:migrate`.
+- **pnpm Build Scripts Warning**: pnpm 11 requires build approvals for specific native packages (`@node-rs/argon2`, `prisma`). The root `package.json` contains `pnpm.onlyBuiltDependencies` to handle this automatically.
 
 ---
 
@@ -230,13 +239,13 @@ pnpm typecheck
 # 4. Validate Prisma database schema
 pnpm --filter @inventory-erp/backend prisma:validate
 
-# 5. Run all unit test suites (Jest backend + Vitest frontend, 159 tests)
+# 5. Run all unit test suites (Jest backend + Vitest frontend, 163 tests)
 pnpm test
 
-# 6. Run backend e2e tests against real PostgreSQL container (119 tests)
+# 6. Run backend e2e tests against real PostgreSQL container (124 tests)
 pnpm --filter @inventory-erp/backend test:e2e
 
-# 7. Total automated test coverage: 278 / 278 tests passing (100% green)
+# 7. Total automated test coverage: 287 / 287 tests passing (100% green across 29 test suites)
 
 # 8. Build both applications for production
 pnpm build

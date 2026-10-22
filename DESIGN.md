@@ -1,174 +1,101 @@
 # Architecture & System Design Document
 
-**System**: Inventory Receipts with Costing and GL Posting  
-**Document Status**: Phase 03 Security & Multi-Tenancy Baseline
+**System**: Inventory Receipts with Costing and General Ledger Posting  
+**Scope**: Final Production Architecture, Concurrency, Scaling & Domain Invariants (Phases 01–12)  
+**Length**: Compact Design Specification (Strict 2-Page Constraint)
 
 ---
 
-## 1. System Overview & Problem Statement
+## 1. Data Model Rationale: Dual Ledger & Materialized Balance Snapshot
 
-This system automates the procurement receiving cycle in an enterprise environment. When inventory arrives at a warehouse, the system records the physical receipt, calculates inventory valuation according to configured costing policies, and immediately posts balanced double-entry accounting records into the General Ledger (GL).
+The inventory domain employs a dual-model architecture: an **immutable, append-only transaction ledger (`StockMovement`)** paired with a **mutable materialized snapshot (`StockBalance`)** per `[companyId, warehouseId, itemId]`.
 
-### Primary Business Goals
-
-1. **Accurate Inventory Valuation**: Maintain real-time stock counts and precise monetary valuation upon receipt.
-2. **Immediate Financial Transparency**: Ensure every physical inventory receipt automatically creates a balanced General Ledger journal entry.
-3. **Audit Integrity & Multi-Tenancy**: Provide end-to-end traceability between physical warehouse receipts and financial ledgers with strict tenant isolation.
+- **Auditability & Forensics**: In financial accounting, inventory balances cannot be overwritten destructively. The append-only ledger records every intake, outbound issue, and reversal with cryptographic actor attribution, timestamp, reference document, and running balance snapshots (`balanceAfter`, `averageCostAfter`).
+- **High-Throughput Operational Performance**: Calculating running stock by summing millions of ledger rows on every inquiry or receipt posting would degrade from $O(1)$ to $O(N)$, causing severe latency and lock contention. The `StockBalance` table maintains pre-aggregated on-hand quantity, total value, and moving average cost for sub-millisecond lookups and atomic row-level locks.
+- **Reconciliation Invariant**: The materialized snapshot can be mathematically reconstructed at any time by replaying historical movements: $\text{Current Balance} = \sum \text{Ledger Inflows} - \sum \text{Ledger Outflows}$. Discrepancies are surfaced via `/api/v1/inventory/reconcile/:warehouseId/:itemId`.
 
 ---
 
-## 2. Architectural Style & Monorepo Strategy
+## 2. Concurrency Strategy & Failure Modes
 
-The application is structured as a **Modular Monolith** organized in an isolated multi-package repository using **pnpm Workspaces**:
+All mutations modifying stock or financial state execute inside single PostgreSQL ACID transactions managed via Prisma.
+
+- **Pessimistic Row-Level Locking**: Concurrent operations on the same SKU acquire exclusive row locks using `SELECT ... FOR UPDATE` on `StockBalance`. Competing transactions serialize cleanly, preventing lost updates and race conditions during weighted-average revaluation.
+- **Initial-Balance Race Elimination**: To prevent `INSERT` collisions when multiple concurrent receipts introduce a new SKU, the engine executes an atomic `INSERT ... ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING` before acquiring the lock.
+- **Deterministic Lock Ordering**: When a receipt contains multiple SKUs, row locks are acquired in sorted order (`itemId: 'asc'`). This guarantees that circular wait conditions cannot occur across concurrent multi-item receipts.
+- **Transient Conflict Retry**: Transient database errors (`40001` Serialization Failure, `40P01` Deadlock, `P2034` Prisma Write Conflict) are automatically caught and retried using exponential backoff with random jitter.
+- **What Could Break These Guarantees?**:
+  1. _Bypassing the ORM/Service Layer_: Direct SQL updates outside the application that modify `stock_balances` without taking row locks or appending to `stock_movements`.
+  2. _Distributed Multi-Master Database Topologies_: Active-active replication setups without synchronous consensus could cause split-brain balance drifts.
+  3. _Long-Running External Calls Inside Transactions_: Invoking external HTTP APIs inside the database transaction boundary would hold row locks open, exhausting PostgreSQL connection pools.
+
+---
+
+## 3. Backdated-Receipt Policy & Rejected Alternatives
+
+- **Current Implementation Policy**: In our perpetual moving weighted-average costing engine, all receipt postings and voids are evaluated against the **live materialized balance at the exact moment of transaction commitment**. The transaction date must fall within an active `OPEN` accounting period. Historical movements are immutable; corrections require explicit compensating reversal transactions (`STOCK_MOVEMENT_REVERSAL`).
+- **Rejected Alternative 1: Full Historical Ledger Recalculation (Cascade Replay)**:
+  - _Why Rejected_: Inserting a backdated receipt into historical timeline and recalculating moving average costs for all subsequent movements rewrites historical cost of goods sold (COGS) and inventory valuation. In regulated accounting, previously closed accounting periods and published financial statements cannot be silently mutated without formal restatement.
+- **Rejected Alternative 2: Allowing Negative Stock Relieving**:
+  - _Why Rejected_: Allowing backdated issues or receipts that create temporary negative stock invalidates moving average formulas (causing negative unit costs or division-by-zero anomalies). The engine strictly rejects any transaction that would result in $Q_{\text{onhand}} < 0$.
+
+---
+
+## 4. Scaling Toward 50 Million Stock Movements
+
+As the inventory ledger grows toward $50,000,000+$ rows, the following architectural scaling path is designed:
+
+1. **Table Partitioning**: Range-partition `stock_movements` by calendar quarter or month on `movementDate`. Historical partitions are placed on read-only tablespaces, while write operations hit active partitions, maintaining small B-Tree index depths.
+2. **Composite Covering Indexes**: Current indexes (`@@index([companyId, itemId, warehouseId, movementDate])`) allow $O(\log N)$ stock card queries. Covering indexes including `balanceAfter` and `averageCostAfter` eliminate heap lookups.
+3. **Point-in-Time Snapshot Archival**: Introduce monthly balance snapshot tables (`monthly_stock_balances`). To rebuild an item's balance or audit a historical stock card, the engine starts from the latest monthly snapshot rather than replaying from inception.
+4. **Read/Write Replica Splitting**: Route analytical reports, trial balances, and stock card lookups (`GET /items/:id/stock-card`) to PostgreSQL streaming read replicas using connection pooling (PgBouncer), reserving the primary node for ACID receipt postings.
+
+---
+
+## 5. Service Separation & Bounded Contexts
+
+If decomposed into distributed microservices, the system splits into three autonomous domains:
 
 ```
-[ Frontend SPA (React + Vite) ]
-             |
-             | HTTP / REST (JSON) + Bearer JWT + X-Correlation-ID
-             v
-[ Backend API (NestJS + TypeScript) ]
-             |
-             +---> Security Layer: Helmet + Centralized AllExceptionsFilter
-             +---> Auth Guard: JwtAuthGuard + DB Status Validation
-             +---> Tenant Isolation: CompanyAccessGuard (IDOR Prevention)
-             +---> RBAC Guard: RolesGuard (SUPER_ADMIN, ADMIN, etc.)
-             |
-             v Prisma ORM (Type-Safe Query Engine)
-[ PostgreSQL Relational Database (ACID Engine) ]
+[ Procurement / Receiving Service ] ──(Events: ReceiptPosted, ReceiptVoided)──> [ Event Broker / Kafka ]
+                                                                                      │
+                                                               ┌──────────────────────┴──────────────────────┐
+                                                               ▼                                             ▼
+                                                [ Inventory Ledger Service ]                   [ General Ledger Accounting Service ]
+                                                - Stock balances & costing                     - Chart of Accounts & journal lines
+                                                - StockMovement append-only                    - Accounting period validations
 ```
 
----
-
-## 3. Security, Authentication & Multi-Tenancy Architecture
-
-### 3.1 Authentication Flow (Phase 03)
-
-- **Password Security**: Passwords are never stored as plaintext. User credentials are encrypted using **Argon2id** (`@node-rs/argon2`), providing state-of-the-art resistance against GPU-accelerated brute force attacks.
-- **Stateless Tokens with Live State Verification**: Authentication issues signed JWT tokens containing `{ sub, email, companyId, role }`. On every protected request, `JwtStrategy` revalidates with PostgreSQL that both the `User` and `Company` remain `isActive: true`. If a user or tenant is disabled, existing tokens are immediately revoked.
-- **Generic Error Responses**: Login failures return unified, generic error responses (`Invalid credentials: check company code, email, or password`) to prevent account or tenant enumeration.
-
-### 3.2 Multi-Company Data Isolation & IDOR Prevention
-
-- **Trusted Server-Side Context**: Client-supplied company IDs, user IDs, or roles in request bodies/params are never trusted blindly.
-- **`CompanyAccessGuard`**: Inspects route parameters (e.g. `:companyId`). If a user from Company A attempts to access or query resources belonging to Company B, the guard immediately rejects the request with **403 Forbidden**.
-- **Tenant-Scoped Data Queries**: All service operations explicitly filter database queries by the verified `req.user.companyId`.
-- **Platform `SUPER_ADMIN` Access**: Cross-tenant administrative operations are restricted to explicit, audited system administrators.
-
-### 3.3 Observability & Security Hardening
-
-- **HTTP Security Headers**: Enforced via `helmet` (blocking clickjacking, MIME sniffing, and enforcing secure referrer policies).
-- **Request Correlation**: `CorrelationIdMiddleware` assigns a unique `X-Correlation-ID` to every HTTP request and attaches it to response headers and log traces.
-- **Centralized Exception Sanitization**: `AllExceptionsFilter` intercepts all thrown errors. In production, database internals, table structures, and stack traces are stripped, returning sanitized client error contracts.
+- **Data Ownership**: Receiving Service owns `Receipts`; Inventory Service owns `StockBalances` and `StockMovements`; Accounting Service owns `Accounts`, `Periods`, and `JournalEntries`.
+- **Asynchronous Event Choreography**: The Transactional Outbox pattern guarantees that `ReceiptPosted` events are published reliably to Kafka/RabbitMQ without dual-write inconsistencies.
+- **Synchronous vs. Asynchronous Interaction**: Posting validation (verifying open period and valid asset accounts) occurs via lightweight synchronous gRPC contracts prior to event commit, while audit logging and external notifications consume asynchronous outbox streams.
 
 ---
 
-## 4. Bounded Contexts (Domain Boundaries)
+## 6. Migration from Legacy Floating-Point Costs
 
-```mermaid
-flowchart TD
-    subgraph AuthContext["Identity & Access (IAM)"]
-        Users["User Master & Roles"]
-        AuthService["Argon2id & JWT Auth"]
-        TenantGuard["CompanyAccessGuard"]
-    end
+Systems migrating from legacy IEEE-754 floating-point databases (`FLOAT`, `DOUBLE PRECISION`) face catastrophic penny-rounding drift.
 
-    subgraph InventoryContext["Inventory Context"]
-        Items["Item Master & UOM"]
-        Warehouses["Warehouse Master"]
-        Receipts["Inventory Receipts (Draft / Posted)"]
-    end
-
-    subgraph CostingContext["Costing Engine"]
-        Valuation["Costing Calculation (Moving Average / FIFO)"]
-        UnitCost["Inventory Layer Valuation"]
-    end
-
-    subgraph AccountingContext["General Ledger (GL) Context"]
-        COA["Chart of Accounts"]
-        Journal["Double-Entry Journal Entries (Debit / Credit)"]
-    end
-
-    AuthService -->|Authenticate| TenantGuard
-    TenantGuard -->|Authorize Tenant Scoped| InventoryContext
-    Receipts -->|Trigger On Post| Valuation
-    Valuation -->|Generate Financial Impact| Journal
-```
+- **Migration Pipeline**:
+  1. _Dual-Column Schema Expansion_: Add temporary `new_unit_cost DECIMAL(19, 4)` and `new_total_value DECIMAL(19, 4)` columns alongside legacy float fields.
+  2. _Deterministic Conversion Script_: Read legacy floating-point values and convert to exact strings via fixed-point truncation and `ROUND_HALF_UP` to 4 decimal places: `new Prisma.Decimal(legacyValue.toFixed(4))`.
+  3. _Penny Variance Ledger Reconciliation_: Calculate the cumulative floating-point delta per SKU: $\Delta = V_{\text{legacy}} - \sum (Q_i \times C_i)$. Post a single adjusting journal entry (Debit/Credit Inventory Revaluation Variance) to align the General Ledger with the sub-ledger.
+  4. _Enforce Database Constraints_: Drop legacy float columns, enforce `DECIMAL(19, 4)` with `NOT NULL` constraints, and reject unvalidated floats at the API boundary.
 
 ---
 
-## 5. Financial & Domain Invariants
+## 7. Deliberately Omitted Scope & Top Three Production Risks
 
-1. **Double-Entry Balance Guarantee**: Every journal entry generated from a receipt MUST satisfy:
-   $$\sum \text{Debit Amounts} = \sum \text{Credit Amounts}$$
-2. **Financial Immutability**: Once a receipt is transitioned to `POSTED`, neither the receipt quantities nor the corresponding journal entries may be edited or deleted. Corrections require offsetting reversal transactions.
-3. **Atomic State Transition**: Receipt status update, inventory balance increment, and GL journal entry creation must execute within a single ACID database transaction.
+### Deliberately Omitted Scope
 
----
+1. **Landed Freight & Customs Proration**: Inbound freight and duties currently hit separate expense/clearing accounts rather than being dynamically prorated across receipt line costs.
+2. **Serial & Batch Expiry Tracking**: Physical lot allocation and expiration date rotation (FEFO) are deferred to warehouse management extensions.
+3. **Automated Period Year-End Closeout**: Net income transfer to Retained Earnings upon closing fiscal periods is handled via manual journal entries rather than automated batch jobs.
 
-## 6. Architecture Decisions Record (ADR)
+### Three Largest Production Risks & Mitigations
 
-| Decision ID | Topic               | Selected Choice              | Rationale                                                                                            |
-| ----------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **ADR-001** | Package Management  | `pnpm` Workspaces            | Native monorepo workspace isolation, zero-hoisting collisions, fast symlink caching.                 |
-| **ADR-002** | Backend Framework   | NestJS 11 + Express          | Strong modularity, dependency injection, declarative validation pipes, enterprise lifecycle.         |
-| **ADR-003** | Database & ORM      | PostgreSQL 16 + Prisma 6     | ACID guarantees for double-entry bookkeeping, strict type-safe schema modeling.                      |
-| **ADR-004** | Port Mapping        | Host port `5434` for DB      | Bypasses local host port `5432` collision while keeping standard container port `5432`.              |
-| **ADR-005** | Frontend Framework  | React 19 + Vite 6            | High-speed ESM build pipeline, strict TypeScript typing, lightweight runtime overhead.               |
-| **ADR-006** | Password Hashing    | Argon2id (`@node-rs/argon2`) | Native Rust prebuilt N-API library; standard against memory/GPU brute force attacks.                 |
-| **ADR-007** | Multi-Tenancy Guard | `CompanyAccessGuard`         | Server-side enforcement of tenant boundary on route parameters; eliminates IDOR risks.               |
-| **ADR-008** | Error Sanitization  | `AllExceptionsFilter`        | Guarantees internal database stack traces or Prisma internals are never exposed to clients.          |
-| **ADR-009** | Concurrency Control | `SELECT ... FOR UPDATE`      | Pessimistic locking with deterministic balance ordering prevents race conditions and deadlocks.      |
-| **ADR-010** | Event Delivery      | Transactional Outbox Pattern | Outbox events created in the exact same transaction as receipt posting/voiding guarantees atomicity. |
-| **ADR-011** | Outbox Worker       | `FOR UPDATE SKIP LOCKED`     | Enables concurrent, non-overlapping worker claims across multiple application instances.             |
-
----
-
-## 7. Audit Trail Architecture
-
-The audit system provides tamper-proof, append-only operational observability:
-
-- **Atomicity**: When an audit event accompanies a committed business transaction (such as `RECEIPT_POSTED` or `RECEIPT_VOIDED`), it is written within the exact same database transaction client. If the transaction rolls back, no orphaned success audit record remains.
-- **Tenant Isolation**: Audit logs are strictly partitioned by `companyId`. Queries via `GET /api/v1/audit-events` filter by `req.user.companyId`.
-- **Immutability**: Audit records have no `UPDATE` or `DELETE` endpoints.
-- **Sensitive Data Cleansing**: Passwords, secrets, tokens, and authorization headers are recursively redacted prior to persistence.
-- **End-to-End Tracing**: Attaches HTTP `x-correlation-id` to audit logs for distributed log correlation.
-
----
-
-## 8. Transactional Outbox Architecture & Processing
-
-To guarantee reliable event delivery without dual-write inconsistencies, the system uses the **Transactional Outbox Pattern**:
-
-```
-[ POST /api/v1/receipts/:id/post ]
-               │
-               ▼ Single PostgreSQL ACID Transaction
-   ┌────────────────────────────────────────────────────────┐
-   │ 1. Lock Receipt (`SELECT FOR UPDATE`)                  │
-   │ 2. Check Open Accounting Period                        │
-   │ 3. Lock & Update Stock Balances (Moving Average Cost)  │
-   │ 4. Insert Append-Only Stock Movements                  │
-   │ 5. Insert Balanced GL Journal Entry (Debit/Credit)     │
-   │ 6. Update Receipt status -> POSTED                     │
-   │ 7. Insert AuditEvent (RECEIPT_POSTED)                  │
-   │ 8. Insert OutboxEvent (RECEIPT_POSTED, status=PENDING) │
-   └────────────────────────────────────────────────────────┘
-               │ Commit Transaction
-               ▼
-[ Background OutboxProcessor Worker ]
-   ┌────────────────────────────────────────────────────────┐
-   │ 1. Recover stale PROCESSING leases older than timeout  │
-   │ 2. Claim batch with `FOR UPDATE SKIP LOCKED`           │
-   │ 3. Update status -> PROCESSING, lockedAt, lockedBy     │
-   └────────────────────────────────────────────────────────┘
-               │ Execute Handler Outside DB Transaction
-               ▼
-   Success? ───► status = PROCESSED, processedAt = NOW()
-   Transient Error? ──► status = PENDING, nextRetryAt (exponential backoff + jitter)
-   Permanent Error? ──► status = FAILED, lastError (redacted)
-```
-
-- **At-Least-Once Delivery**: Downstream consumers are expected to be idempotent using the event's unique `id`.
-- **Worker Concurrency**: Multiple worker processes safely process events concurrently without locking conflicts using PostgreSQL's `SKIP LOCKED`.
-- **Resilience**: Crashed worker claims are automatically reclaimed via lease expiration recovery (`recoverStaleLeases`).
-- **Controlled Replay**: Administrators can inspect failed events and queue them for controlled reprocessing via `POST /api/v1/outbox/:id/replay`.
+| Risk                                                   | Description                                                                                                                       | Implemented Mitigation                                                                                                                                                                               |
+| :----------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Database Lock Contention Under High Concurrency** | Thousands of simultaneous receipts posting the same SKU can cause PostgreSQL connection pool exhaustion and transaction timeouts. | Deterministic sort order on SKU lock acquisition (`itemId: 'asc'`), bounded jittered retries, and keeping non-database tasks outside the transaction boundary.                                       |
+| **2. Downstream Outbox Consumer Lag / Poison Pills**   | A malformed external consumer could repeatedly fail on specific outbox payloads, blocking subsequent event processing.            | Outbox worker uses `SKIP LOCKED` for parallel batching, exponential backoff, dead-letter queuing (`DEAD_LETTER`), and administrative replay endpoints.                                               |
+| **3. Accidental Stock Depletion Void Collisions**      | A user attempts to void a receipt while an automated fulfillment worker is concurrently issuing goods for customer dispatch.      | Atomic row locking on stock balances during void workflow validates $Q_{\text{onhand}} \ge Q_{\text{received}}$ inside the transaction, rejecting void with HTTP 409 Conflict if stock was consumed. |

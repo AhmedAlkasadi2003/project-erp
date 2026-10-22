@@ -4,6 +4,7 @@ import { StockBalanceService } from './stock-balance.service';
 import { InventoryLedgerService } from './inventory-ledger.service';
 import { QueryStockBalancesDto } from './dto/query-stock-balances.dto';
 import { QueryStockMovementsDto } from './dto/query-stock-movements.dto';
+import { QueryStockCardDto } from './dto/query-stock-card.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CompanyAccessGuard } from '../common/guards/company-access.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -85,5 +86,25 @@ export class InventoryController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ) {
     return this.stockBalanceService.reconcileBalance(user.companyId, warehouseId, itemId);
+  }
+
+  /**
+   * GET /api/v1/inventory/items/:id/stock-card?from&to&warehouseId
+   * Alias for item stock card under inventory namespace.
+   */
+  @Get('items/:id/stock-card')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
+  async getItemStockCard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) itemId: string,
+    @Query() query: QueryStockCardDto,
+  ) {
+    return this.inventoryLedgerService.getStockCard(user.companyId, itemId, query);
   }
 }

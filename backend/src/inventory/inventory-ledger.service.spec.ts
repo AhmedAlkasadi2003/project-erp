@@ -1,10 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, StockMovementType } from '@prisma/client';
 import { InventoryLedgerService } from './inventory-ledger.service';
 import { CostingEngineService } from './costing/costing-engine.service';
 import { StockBalanceService } from './stock-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueryStockCardDto } from './dto/query-stock-card.dto';
 
 describe('InventoryLedgerService (Unit)', () => {
   let service: InventoryLedgerService;
@@ -27,7 +33,7 @@ describe('InventoryLedgerService (Unit)', () => {
     mockPrisma = {
       warehouse: { findFirst: jest.fn() },
       item: { findFirst: jest.fn() },
-      stockBalance: { update: jest.fn() },
+      stockBalance: { update: jest.fn(), findMany: jest.fn() },
       stockMovement: {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -246,6 +252,132 @@ describe('InventoryLedgerService (Unit)', () => {
 
       await expect(service.withRetry(op, 3)).rejects.toThrow(BadRequestException);
       expect(op).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getStockCard()', () => {
+    it('should throw NotFoundException if item does not exist in company', async () => {
+      mockPrisma.item.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getStockCard(companyId, 'non-existent-item', new QueryStockCardDto()),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw NotFoundException if warehouse does not exist in company', async () => {
+      mockPrisma.item.findFirst.mockResolvedValue({
+        id: itemId,
+        sku: 'SKU-01',
+        name: 'Steel Sheet',
+        uom: 'PCS',
+        valuationMethod: 'MOVING_AVERAGE',
+      });
+      mockPrisma.warehouse.findFirst.mockResolvedValue(null);
+
+      const query: QueryStockCardDto = {
+        warehouseId: 'bad-warehouse',
+        page: 1,
+        limit: 50,
+      };
+
+      await expect(service.getStockCard(companyId, itemId, query)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw BadRequestException if from date is after to date', async () => {
+      mockPrisma.item.findFirst.mockResolvedValue({
+        id: itemId,
+        sku: 'SKU-01',
+        name: 'Steel Sheet',
+        uom: 'PCS',
+        valuationMethod: 'MOVING_AVERAGE',
+      });
+
+      const query: QueryStockCardDto = {
+        from: '2026-06-01',
+        to: '2026-01-01',
+        page: 1,
+        limit: 50,
+      };
+
+      await expect(service.getStockCard(companyId, itemId, query)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should return complete stock card with opening balance, movements, running balances, and closing balance', async () => {
+      mockPrisma.item.findFirst.mockResolvedValue({
+        id: itemId,
+        sku: 'SKU-01',
+        name: 'Steel Sheet',
+        uom: 'PCS',
+        valuationMethod: 'MOVING_AVERAGE',
+      });
+
+      // Prior movement before `from` date: gives opening balance of 10 @ $15 = $150
+      mockPrisma.stockMovement.findFirst
+        .mockResolvedValueOnce({
+          id: 'prior-1',
+          balanceAfter: new Prisma.Decimal('10.0000'),
+          averageCostAfter: new Prisma.Decimal('15.0000'),
+        })
+        // Second call inside getStockCard for closing balance
+        .mockResolvedValueOnce({
+          id: 'mov-1',
+          balanceAfter: new Prisma.Decimal('20.0000'),
+          averageCostAfter: new Prisma.Decimal('17.5000'),
+        });
+
+      mockPrisma.stockMovement.count.mockResolvedValue(1);
+      mockPrisma.stockMovement.findMany.mockResolvedValue([
+        {
+          id: 'mov-1',
+          movementDate: new Date('2026-01-15T10:00:00Z'),
+          createdAt: new Date('2026-01-15T10:00:00Z'),
+          movementType: StockMovementType.RECEIPT,
+          referenceType: 'RECEIPT',
+          referenceId: 'REC-001',
+          receiptId: 'receipt-1',
+          receiptLineId: 'line-1',
+          warehouse: { id: warehouseId, code: 'WH-01', name: 'Main Warehouse' },
+          quantity: new Prisma.Decimal('10.0000'),
+          unitCost: new Prisma.Decimal('20.0000'),
+          totalCost: new Prisma.Decimal('200.0000'),
+          balanceAfter: new Prisma.Decimal('20.0000'),
+          averageCostAfter: new Prisma.Decimal('17.5000'),
+          performedByUser: { id: userId, name: 'Alice', email: 'alice@erp.local' },
+        },
+      ]);
+
+      mockPrisma.stockBalance.findMany.mockResolvedValue([
+        {
+          warehouse: { id: warehouseId, code: 'WH-01', name: 'Main Warehouse' },
+          quantityOnHand: new Prisma.Decimal('20.0000'),
+          totalValue: new Prisma.Decimal('350.0000'),
+          averageCost: new Prisma.Decimal('17.5000'),
+        },
+      ]);
+
+      const query: QueryStockCardDto = {
+        from: '2026-01-01',
+        to: '2026-01-31',
+        page: 1,
+        limit: 50,
+      };
+
+      const result = await service.getStockCard(companyId, itemId, query);
+
+      expect(result.item.sku).toBe('SKU-01');
+      expect(result.openingBalance.quantity).toBe('10.0000');
+      expect(result.openingBalance.averageCost).toBe('15.0000');
+      expect(result.openingBalance.totalValue).toBe('150.0000');
+      expect(result.closingBalance.quantity).toBe('20.0000');
+      expect(result.closingBalance.averageCost).toBe('17.5000');
+      expect(result.movements).toHaveLength(1);
+      expect(result.movements[0].runningQuantity).toBe('20.0000');
+      expect(result.movements[0].runningAverageCost).toBe('17.5000');
+      expect(result.currentBalances[0].quantityOnHand).toBe('20.0000');
     });
   });
 });

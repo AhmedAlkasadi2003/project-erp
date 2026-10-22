@@ -141,6 +141,12 @@ This document records the confirmed assumptions, resolved technical decisions, a
     - **Bilingual Localization & Bi-directional Layout**: Type-safe English and Arabic dictionaries provide comprehensive system coverage. Switching languages dynamically modifies `document.documentElement.dir` (`rtl` vs `ltr`) and `lang`. Layouts strictly utilize CSS logical properties (`margin-inline`, `padding-inline`, flex directions) to achieve robust bi-directional symmetry without hardcoded directional assumptions.
     - **Accessibility Invariants (WCAG 2.2 AA)**: All inputs feature explicit label pairings and aria-describedby validation hints. Modal dialogs trap keyboard focus and restore focus on dismissal. Status updates and loading spinners feature screen reader announcements via `aria-live="polite"` and `role="status"`. Color contrasts across light and dark themes comply with WCAG 2.2 AA (minimum 4.5:1 for normal text).
 
+14. **Item Stock Card (Bin Card / Ledger Card) Invariants (Phase 12)**:
+    - **Running Balances Representation**: Every movement line in `GET /api/v1/items/:id/stock-card` returns exact running stock quantities (`runningQuantity` / `balanceAfter`) and running moving-average costs (`runningAverageCost` / `averageCostAfter`) formatted with 4-decimal precision (`DECIMAL(18, 4)` and `DECIMAL(19, 4)`).
+    - **Opening Balance Evaluation**: If a `from` date filter is supplied, opening balance is computed from the most recent movement strictly prior to the `from` boundary (`movementDate < fromDate`). If no prior movements exist, opening balance defaults to zero (`0.0000`).
+    - **Closing Balance Continuity**: Closing balance reflects the balance snapshot of the final movement within the queried time window, ensuring mathematical continuity between periods.
+    - **Tenant Isolation**: Querying stock cards requires an item belonging to the authenticated tenant. Cross-tenant access is rejected with `HTTP 404 Not Found`.
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations

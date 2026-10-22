@@ -199,8 +199,16 @@ export class ReceiptsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto?: PostReceiptDto,
     @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.receiptPostingService.postReceipt(user.companyId, user.id, id, dto, idempotencyKey);
+    return this.receiptPostingService.postReceipt(
+      user.companyId,
+      user.id,
+      id,
+      dto,
+      idempotencyKey,
+      correlationId,
+    );
   }
 
   /**
@@ -214,8 +222,16 @@ export class ReceiptsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto?: VoidReceiptDto,
     @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.receiptPostingService.voidReceipt(user.companyId, user.id, id, dto, idempotencyKey);
+    return this.receiptPostingService.voidReceipt(
+      user.companyId,
+      user.id,
+      id,
+      dto,
+      idempotencyKey,
+      correlationId,
+    );
   }
 
   /**
@@ -229,7 +245,15 @@ export class ReceiptsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto?: VoidReceiptDto,
     @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('x-correlation-id') correlationId?: string,
   ) {
-    return this.receiptPostingService.voidReceipt(user.companyId, user.id, id, dto, idempotencyKey);
+    return this.receiptPostingService.voidReceipt(
+      user.companyId,
+      user.id,
+      id,
+      dto,
+      idempotencyKey,
+      correlationId,
+    );
   }
 }

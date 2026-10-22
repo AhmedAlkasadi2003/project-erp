@@ -10,6 +10,8 @@ import { InventoryAccountsService } from '../../accounting/inventory-accounts/in
 import { AccountingPeriodsService } from '../../accounting/periods/accounting-periods.service';
 import { JournalValidatorService } from '../../accounting/journal/journal-validator.service';
 import { JournalEntriesService } from '../../accounting/journal/journal-entries.service';
+import { AuditService } from '../../audit/audit.service';
+import { OutboxService } from '../../outbox/outbox.service';
 
 describe('ReceiptPostingService', () => {
   let service: ReceiptPostingService;
@@ -20,6 +22,8 @@ describe('ReceiptPostingService', () => {
   let mockPeriodsService: any;
   let mockJournalValidator: any;
   let mockJournalEntriesService: any;
+  let mockAuditService: any;
+  let mockOutboxService: any;
 
   const companyId = 'company-123';
   const userId = 'user-123';
@@ -88,6 +92,14 @@ describe('ReceiptPostingService', () => {
       generateEntryNumber: jest.fn().mockResolvedValue('JE-2026-00001'),
     };
 
+    mockAuditService = {
+      record: jest.fn().mockResolvedValue({ id: 'audit-1' }),
+    };
+
+    mockOutboxService = {
+      createEvent: jest.fn().mockResolvedValue({ id: 'outbox-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReceiptPostingService,
@@ -98,6 +110,8 @@ describe('ReceiptPostingService', () => {
         { provide: AccountingPeriodsService, useValue: mockPeriodsService },
         { provide: JournalValidatorService, useValue: mockJournalValidator },
         { provide: JournalEntriesService, useValue: mockJournalEntriesService },
+        { provide: AuditService, useValue: mockAuditService },
+        { provide: OutboxService, useValue: mockOutboxService },
       ],
     }).compile();
 
@@ -201,13 +215,20 @@ describe('ReceiptPostingService', () => {
       expect(result.journalEntryId).toBe('je-1');
       expect(mockInventoryLedger.recordInboundMovement).toHaveBeenCalledTimes(1);
       expect(mockPrisma.journalEntry.create).toHaveBeenCalled();
-      expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith(
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        expect.anything(),
         expect.objectContaining({
-          data: expect.objectContaining({
-            action: 'RECEIPT_POSTED',
-            entityType: 'Receipt',
-            entityId: receiptId,
-          }),
+          action: 'RECEIPT_POSTED',
+          entityType: 'Receipt',
+          entityId: receiptId,
+        }),
+      );
+      expect(mockOutboxService.createEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'RECEIPT_POSTED',
+          aggregateType: 'Receipt',
+          aggregateId: receiptId,
         }),
       );
     });
@@ -375,12 +396,18 @@ describe('ReceiptPostingService', () => {
         where: { id: 'je-1' },
         data: { status: JournalEntryStatus.VOIDED },
       });
-      expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith(
+      expect(mockAuditService.record).toHaveBeenCalledWith(
+        expect.anything(),
         expect.objectContaining({
-          data: expect.objectContaining({
-            action: 'RECEIPT_VOIDED',
-            entityType: 'Receipt',
-          }),
+          action: 'RECEIPT_VOIDED',
+          entityType: 'Receipt',
+        }),
+      );
+      expect(mockOutboxService.createEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'RECEIPT_VOIDED',
+          aggregateType: 'Receipt',
         }),
       );
     });

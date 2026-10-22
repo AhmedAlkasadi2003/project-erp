@@ -7,6 +7,11 @@ export class VoidReceiptDto {
   reason?: string;
 
   @IsOptional()
+  @IsString({ message: 'voidReason must be a string' })
+  @MaxLength(500, { message: 'voidReason cannot exceed 500 characters' })
+  voidReason?: string;
+
+  @IsOptional()
   @IsISO8601({}, { message: 'voidDate must be a valid ISO 8601 date string' })
   voidDate?: string;
 }

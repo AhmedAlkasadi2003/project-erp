@@ -1,8 +1,8 @@
 # Requirements Verification & Compliance Checklist
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Current Phase**: Phase 07 — Atomic Receipt Posting, Inventory Integration & Safe Void Workflow  
-**Status**: 100% Verified & Passing
+**Current Phase**: Phase 09 — Backend Integration Testing, Concurrency & Reliability Hardening  
+**Status**: 100% Verified & Passing (264/264 Tests Green)
 
 ---
 
@@ -163,10 +163,41 @@
 
 ---
 
-## 8. Forward Phases Roadmap (Scope Enforcement)
+## 8. Phase 08: Audit Trail & Transactional Outbox (Completed)
 
-| Phase                         | Description                                                                                     | Status in Phase 07  | Target Phase |
+| Requirement                 | Implementation Details                                                                                                                             | Status   | Verification Evidence                                                              |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------- |
+| **Prisma Schema Update**    | Added `correlationId` to `AuditEvent`; updated `OutboxStatus` with `PROCESSING` & `DEAD_LETTER`; added lock/retry tracking fields to `OutboxEvent` | **PASS** | Migration `20261022140751_enhance_audit_and_outbox_infrastructure` applied cleanly |
+| **Append-Only Audit Trail** | `AuditService` logs immutable user/system operations; updates/deletions forbidden; tenant-isolated via `companyId`                                 | **PASS** | `audit.service.spec.ts` & `audit-and-outbox.e2e-spec.ts`                           |
+| **Credential Sanitization** | Automatic redaction of passwords, tokens, API keys, and authorization secrets from `oldValues`/`newValues` JSON payloads                           | **PASS** | `audit.service.spec.ts` (tested with deep nested credentials)                      |
+| **Correlation ID Flow**     | `CorrelationIdMiddleware` extracts or generates `X-Correlation-ID`; propagated to audit records and outbox events                                  | **PASS** | Verified in `audit-and-outbox.e2e-spec.ts`                                         |
+| **Transactional Outbox**    | `OutboxService.recordEvent` guarantees `OutboxEvent` persists within the exact same database transaction as receipt posting/voiding                | **PASS** | Verified in `receipt-posting.service.spec.ts` and E2E tests                        |
+| **Pessimistic Claiming**    | Outbox processor claims batches using PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` without lock contention or worker collisions                  | **PASS** | `outbox-processor.spec.ts` and E2E stress test                                     |
+| **Exponential Backoff**     | Retries failed event delivery with bounded exponential backoff ($2^{\text{retry}} \times 1\text{s}$) and jitter up to `maxRetries` (5)             | **PASS** | `outbox-processor.spec.ts` (10 unit tests) & E2E tests                             |
+| **Dead-Letter Handling**    | Events exceeding max retries transition to `DEAD_LETTER` status with `lastError` recorded                                                          | **PASS** | Verified in `audit-and-outbox.e2e-spec.ts`                                         |
+| **Stale Lease Recovery**    | Worker automatically recovers abandoned claims (`lockedAt < NOW() - 5m`) for re-processing                                                         | **PASS** | Verified in `outbox-processor.spec.ts` & E2E tests                                 |
+| **Admin Metrics & Replay**  | `GET /api/v1/outbox/metrics` exposes queue state; `POST /api/v1/outbox/:id/replay` re-queues failed/dead-letter events                             | **PASS** | Guarded by `ADMIN` role; verified in E2E tests                                     |
+
+---
+
+## 9. Phase 09: Backend Integration Testing, Concurrency & Reliability Hardening (Completed)
+
+| Scenario / Verification Area         | Implementation & Hardening Details                                                                                                        | Status   | Verification Evidence                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| **Scenario A: Double Post Race**     | Two concurrent posting requests for the same receipt serialize via row-lock; exactly one succeeds (200), other rejected with HTTP 409     | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario A) |
+| **Scenario B: Concurrent Costing**   | Competing receipts for the same SKU update stock balance cleanly via row locking with correct cumulative moving average cost              | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario B) |
+| **Scenario C: Initial Balance Race** | Concurrent receipts for a newly introduced SKU execute atomic `INSERT ... ON CONFLICT DO NOTHING`, eliminating unique violation errors    | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario C) |
+| **Scenario D: Safe Void Defense**    | Attempt to void a posted receipt after inventory has been partially consumed is strictly blocked (HTTP 409 Conflict)                      | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario D) |
+| **Scenario E: Disjoint Outbox**      | Multiple concurrent outbox processors claim disjoint event batches via `SKIP LOCKED` without processing collisions or duplicate emissions | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario E) |
+| **Scenario F: Multi-Tenant IDOR**    | Cross-tenant requests to query, post, void, or audit entities of another tenant strictly return HTTP 403 / 404                            | **PASS** | Verified in `test/concurrency-and-reliability.e2e-spec.ts` (Scenario F) |
+| **Complete Test Suite Pass Rate**    | 18 backend unit suites (143 tests), 1 frontend unit suite (2 tests), 8 backend E2E suites (119 tests) against live PostgreSQL             | **PASS** | **264 / 264 automated tests passing (100% green)**                      |
+
+---
+
+## 10. Forward Phases Roadmap (Scope Enforcement)
+
+| Phase                         | Description                                                                                     | Status in Phase 09  | Target Phase |
 | ----------------------------- | ----------------------------------------------------------------------------------------------- | ------------------- | ------------ |
-| **Frontend UI Foundation**    | Receipt management, line entry, warehouse selection, and status badges                          | **NOT IMPLEMENTED** | Phase 08     |
-| **Posting UI & GL Inquiries** | Receipt posting confirmation modal, stock balance inquiry, void reason dialog, and journal view | **NOT IMPLEMENTED** | Phase 08     |
-| **Financial Reconciliation**  | Trial balance reports, GL-to-subledger balance audits, and full lifecycle E2E suite             | **NOT IMPLEMENTED** | Phase 09     |
+| **Frontend UI Foundation**    | Receipt management, line entry, warehouse selection, and status badges                          | **NOT IMPLEMENTED** | Phase 10     |
+| **Posting UI & GL Inquiries** | Receipt posting confirmation modal, stock balance inquiry, void reason dialog, and journal view | **NOT IMPLEMENTED** | Phase 10     |
+| **Financial Reporting**       | Trial balance reports, GL-to-subledger balance audits, and full lifecycle E2E suite             | **NOT IMPLEMENTED** | Phase 11     |

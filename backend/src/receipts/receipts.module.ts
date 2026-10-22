@@ -5,9 +5,11 @@ import { ReceiptPostingService } from './posting/receipt-posting.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { AccountingModule } from '../accounting/accounting.module';
+import { AuditModule } from '../audit/audit.module';
+import { OutboxModule } from '../outbox/outbox.module';
 
 @Module({
-  imports: [PrismaModule, InventoryModule, AccountingModule],
+  imports: [PrismaModule, InventoryModule, AccountingModule, AuditModule, OutboxModule],
   controllers: [ReceiptsController],
   providers: [ReceiptsService, ReceiptPostingService],
   exports: [ReceiptsService, ReceiptPostingService],

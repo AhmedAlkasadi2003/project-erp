@@ -4,7 +4,7 @@
 
 The `backend` workspace provides the server-side API foundation for the **Inventory Receipts with Costing and GL Posting** system. It is built with **NestJS 11**, **TypeScript (Strict Mode)**, and **Prisma ORM 6** connecting to **PostgreSQL 16**.
 
-> **Phase 07 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, draft receipts management API, inventory ledger & moving average costing engine, accounting foundation (`AccountsService`, `AccountingPeriodsService`, `InventoryAccountsService`, `JournalValidatorService`, `JournalEntriesService`), and the complete **atomic receipt posting and safe voiding engine** (`ReceiptPostingService`) with row-level concurrency locking, idempotency support, GL journal entry integration, and compensating stock ledger reversals.
+> **Phase 08 & 09 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, draft receipts management API, inventory ledger & moving average costing engine, accounting foundation (`AccountsService`, `AccountingPeriodsService`, `InventoryAccountsService`, `JournalValidatorService`, `JournalEntriesService`), the complete **atomic receipt posting and safe voiding engine** (`ReceiptPostingService`) with row-level concurrency locking, idempotency support, GL journal entry integration, compensating stock ledger reversals, **tamper-evident Audit Trail** (`AuditService`, `AuditController`), **Transactional Outbox Engine** (`OutboxService`, `OutboxProcessor`, `OutboxController`) with `SELECT ... FOR UPDATE SKIP LOCKED` batch claiming and bounded exponential retry backoff, and **comprehensive concurrency & reliability hardening** (100% green against real PostgreSQL).
 
 ---
 
@@ -29,7 +29,8 @@ backend/
 │   ├── migrations/             # Applied SQL migrations
 │   │   ├── 20261022084335_init_database_foundation/
 │   │   ├── 20261022090116_add_auth_credentials_and_super_admin/
-│   │   └── 20261022131957_add_receipt_posting_void_and_indexes/
+│   │   ├── 20261022131957_add_receipt_posting_void_and_indexes/
+│   │   └── 20261022140751_enhance_audit_and_outbox_infrastructure/
 │   ├── schema.prisma           # Complete relational schema (17 models, 11 enums)
 │   └── seed.ts                 # Idempotent development seed (companies, users, accounts, items)
 ├── src/
@@ -39,6 +40,12 @@ backend/
 │   │   ├── journal/            # Pure double-entry validation engine & drafts
 │   │   ├── periods/            # Accounting periods & boundary validation
 │   │   └── accounting.module.ts
+│   ├── audit/                  # Audit Trail Module (Phase 08)
+│   │   ├── dto/                # QueryAuditEventsDto
+│   │   ├── audit.controller.ts # Guarded /api/v1/audit-events
+│   │   ├── audit.module.ts
+│   │   ├── audit.service.ts    # Append-only tenant-isolated audit log with sanitization
+│   │   └── audit.service.spec.ts
 │   ├── auth/                   # Authentication & Session Module
 │   │   ├── dto/                # LoginDto with class-validator
 │   │   ├── interfaces/         # JwtPayload
@@ -69,6 +76,15 @@ backend/
 │   │   ├── inventory-ledger.service.spec.ts
 │   │   ├── stock-balance.service.ts    # Atomic upsert, SELECT FOR UPDATE locking & audit
 │   │   └── stock-balance.service.spec.ts
+│   ├── outbox/                 # Transactional Outbox Engine (Phase 08)
+│   │   ├── handlers/           # Event handlers (ReceiptEventsHandler)
+│   │   ├── interfaces/         # OutboxEvent, OutboxHandler, OutboxMetrics interfaces
+│   │   ├── outbox.controller.ts # /api/v1/outbox/metrics & /outbox/:id/replay
+│   │   ├── outbox.module.ts
+│   │   ├── outbox.service.ts   # Enforces transactional outbox persistence
+│   │   ├── outbox-processor.ts # SKIP LOCKED worker, lease recovery, backoff retry
+│   │   ├── outbox.service.spec.ts
+│   │   └── outbox-processor.spec.ts
 │   ├── receipts/               # Inventory Receipts & Posting Management (Phase 04 & 07)
 │   │   ├── dto/                # Create, Update, Post, Void, and Query DTOs
 │   │   ├── posting/            # Atomic posting & voiding orchestration
@@ -98,6 +114,8 @@ backend/
 │   ├── inventory-ledger-and-costing.e2e-spec.ts # Ledger, concurrency lock, and costing E2E suite
 │   ├── accounting-foundation.e2e-spec.ts # Chart of accounts, periods, and journal E2E suite
 │   ├── receipt-posting-and-void.e2e-spec.ts # Atomic receipt posting, GL, idempotency & void E2E suite
+│   ├── audit-and-outbox.e2e-spec.ts # Audit logging, correlation propagation, and outbox worker E2E suite
+│   ├── concurrency-and-reliability.e2e-spec.ts # Scenarios A-F: concurrency stress, race conditions, safe void
 │   └── jest-e2e.json           # Jest E2E test runner configuration
 ├── .env.example                # Example environment variables
 ├── .gitignore                  # Backend-specific ignore rules
@@ -119,14 +137,16 @@ Copy `.env.example` to `.env` before running the backend:
 cp .env.example .env
 ```
 
-| Variable         | Description                                                   | Default                                                                                       |
-| ---------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `PORT`           | HTTP port for the backend server                              | `4000`                                                                                        |
-| `NODE_ENV`       | Application environment (`development`, `test`, `production`) | `development`                                                                                 |
-| `DATABASE_URL`   | PostgreSQL connection string                                  | `postgresql://erp_user:erp_password_local_dev@localhost:5434/inventory_erp_dev?schema=public` |
-| `CORS_ORIGIN`    | Allowed CORS origin for frontend client                       | `http://localhost:5173`                                                                       |
-| `JWT_SECRET`     | Secret key for signing and verifying JWT tokens               | `super-secret-dev-jwt-key-replace-in-production-min-32-chars-long`                            |
-| `JWT_EXPIRES_IN` | Token time-to-live string (e.g. `1h`, `3600s`)                | `3600s`                                                                                       |
+| Variable                  | Description                                                   | Default                                                                                       |
+| ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `PORT`                    | HTTP port for the backend server                              | `4000`                                                                                        |
+| `NODE_ENV`                | Application environment (`development`, `test`, `production`) | `development`                                                                                 |
+| `DATABASE_URL`            | PostgreSQL connection string                                  | `postgresql://erp_user:erp_password_local_dev@localhost:5434/inventory_erp_dev?schema=public` |
+| `CORS_ORIGIN`             | Allowed CORS origin for frontend client                       | `http://localhost:5173`                                                                       |
+| `JWT_SECRET`              | Secret key for signing and verifying JWT tokens               | `super-secret-dev-jwt-key-replace-in-production-min-32-chars-long`                            |
+| `JWT_EXPIRES_IN`          | Token time-to-live string (e.g. `1h`, `3600s`)                | `3600s`                                                                                       |
+| `OUTBOX_WORKER_ENABLED`   | Enable background outbox processor (`true`/`false`)           | `true`                                                                                        |
+| `OUTBOX_POLL_INTERVAL_MS` | Outbox polling frequency in milliseconds                      | `5000`                                                                                        |
 
 ---
 

@@ -19,6 +19,8 @@ import { InventoryAccountsService } from '../../accounting/inventory-accounts/in
 import { AccountingPeriodsService } from '../../accounting/periods/accounting-periods.service';
 import { JournalValidatorService } from '../../accounting/journal/journal-validator.service';
 import { JournalEntriesService } from '../../accounting/journal/journal-entries.service';
+import { AuditService } from '../../audit/audit.service';
+import { OutboxService } from '../../outbox/outbox.service';
 import { PostReceiptDto } from '../dto/post-receipt.dto';
 import { VoidReceiptDto } from '../dto/void-receipt.dto';
 
@@ -64,6 +66,8 @@ export class ReceiptPostingService {
     private readonly periodsService: AccountingPeriodsService,
     private readonly journalValidator: JournalValidatorService,
     private readonly journalEntriesService: JournalEntriesService,
+    private readonly auditService: AuditService,
+    private readonly outboxService: OutboxService,
   ) {}
 
   /**
@@ -113,6 +117,7 @@ export class ReceiptPostingService {
     receiptId: string,
     dto?: PostReceiptDto,
     idempotencyKey?: string,
+    correlationId?: string,
   ): Promise<PostReceiptResult> {
     // 1. Idempotency Check (if key provided)
     if (idempotencyKey) {
@@ -361,22 +366,42 @@ export class ReceiptPostingService {
             });
 
             // Step 9: Record Audit Event
-            await tx.auditEvent.create({
-              data: {
+            await this.auditService.record(tx, {
+              companyId,
+              userId,
+              action: 'RECEIPT_POSTED',
+              entityType: 'Receipt',
+              entityId: receipt.id,
+              changes: {
+                previousStatus: ReceiptStatus.DRAFT,
+                newStatus: ReceiptStatus.POSTED,
+                journalEntryId: journalEntry.id,
+                entryNumber: journalEntry.entryNumber,
+                movementCount: createdMovements.length,
+                totalAmount: receipt.totalAmount.toString(),
+                postingDate: postingDate.toISOString(),
+              },
+              correlationId,
+            });
+
+            // Step 10: Create Transactional Outbox Event within the exact same transaction
+            await this.outboxService.createEvent(tx, {
+              companyId,
+              aggregateType: 'Receipt',
+              aggregateId: receipt.id,
+              eventType: 'RECEIPT_POSTED',
+              eventVersion: 1,
+              payload: {
+                receiptId: receipt.id,
+                receiptNumber: receipt.receiptNumber,
                 companyId,
-                userId,
-                action: 'RECEIPT_POSTED',
-                entityType: 'Receipt',
-                entityId: receipt.id,
-                changes: {
-                  previousStatus: ReceiptStatus.DRAFT,
-                  newStatus: ReceiptStatus.POSTED,
-                  journalEntryId: journalEntry.id,
-                  entryNumber: journalEntry.entryNumber,
-                  movementCount: createdMovements.length,
-                  totalAmount: receipt.totalAmount.toString(),
-                  postingDate: postingDate.toISOString(),
-                },
+                totalAmount: receipt.totalAmount.toString(),
+                subtotal: receipt.subtotal.toString(),
+                taxAmount: receipt.taxAmount.toString(),
+                postingDate: postingDate.toISOString(),
+                journalEntryId: journalEntry.id,
+                journalEntryNumber: journalEntry.entryNumber,
+                movementsCount: createdMovements.length,
               },
             });
 
@@ -441,6 +466,7 @@ export class ReceiptPostingService {
     receiptId: string,
     dto?: VoidReceiptDto,
     idempotencyKey?: string,
+    correlationId?: string,
   ): Promise<VoidReceiptResult> {
     // 1. Idempotency Check (if key provided)
     if (idempotencyKey) {
@@ -676,7 +702,7 @@ export class ReceiptPostingService {
             });
 
             // Step 8: Transition Receipt status to VOIDED
-            const voidReason = dto?.reason?.trim() || 'Voided by user';
+            const voidReason = dto?.voidReason?.trim() || dto?.reason?.trim() || 'Voided by user';
             const voidedReceipt = await tx.receipt.update({
               where: { id: receipt.id },
               data: {
@@ -713,23 +739,42 @@ export class ReceiptPostingService {
             });
 
             // Step 9: Record Audit Event
-            await tx.auditEvent.create({
-              data: {
+            await this.auditService.record(tx, {
+              companyId,
+              userId,
+              action: 'RECEIPT_VOIDED',
+              entityType: 'Receipt',
+              entityId: receipt.id,
+              changes: {
+                previousStatus: ReceiptStatus.POSTED,
+                newStatus: ReceiptStatus.VOIDED,
+                originalJournalEntryId: receipt.journalEntryId,
+                reversingJournalEntryId: reversingJournal.id,
+                reversingJournalNumber: reversingJournal.entryNumber,
+                voidReason,
+                movementsReversed: reversingMovements.length,
+                voidDate: voidDate.toISOString(),
+              },
+              correlationId,
+            });
+
+            // Step 10: Create Transactional Outbox Event within the exact same transaction
+            await this.outboxService.createEvent(tx, {
+              companyId,
+              aggregateType: 'Receipt',
+              aggregateId: receipt.id,
+              eventType: 'RECEIPT_VOIDED',
+              eventVersion: 1,
+              payload: {
+                receiptId: receipt.id,
+                receiptNumber: receipt.receiptNumber,
                 companyId,
-                userId,
-                action: 'RECEIPT_VOIDED',
-                entityType: 'Receipt',
-                entityId: receipt.id,
-                changes: {
-                  previousStatus: ReceiptStatus.POSTED,
-                  newStatus: ReceiptStatus.VOIDED,
-                  originalJournalEntryId: receipt.journalEntryId,
-                  reversingJournalEntryId: reversingJournal.id,
-                  reversingJournalNumber: reversingJournal.entryNumber,
-                  voidReason,
-                  movementsReversed: reversingMovements.length,
-                  voidDate: voidDate.toISOString(),
-                },
+                voidReason,
+                originalJournalEntryId: receipt.journalEntryId,
+                reversingJournalEntryId: reversingJournal.id,
+                reversingJournalNumber: reversingJournal.entryNumber,
+                movementsReversedCount: reversingMovements.length,
+                voidedAt: new Date().toISOString(),
               },
             });
 

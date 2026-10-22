@@ -8,6 +8,8 @@ import { CompaniesModule } from './companies/companies.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { AuditModule } from './audit/audit.module';
+import { OutboxModule } from './outbox/outbox.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
 @Module({
@@ -23,6 +25,8 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     ReceiptsModule,
     InventoryModule,
     AccountingModule,
+    AuditModule,
+    OutboxModule,
   ],
 })
 export class AppModule implements NestModule {

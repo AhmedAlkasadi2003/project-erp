@@ -1,7 +1,7 @@
 # Project Domain & Database Architecture Analysis
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Phase**: Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing  
+**Phase**: Phase 09 — Backend Integration Testing, Concurrency & Reliability Hardening  
 **Author**: Principal / Senior Backend Engineer & Software Architect
 
 ---
@@ -437,4 +437,35 @@ flowchart TD
 
 - **Stock Depletion Defense**: If goods received on a receipt were subsequently issued, shipped, or consumed, voiding the receipt would drive physical stock below zero and corrupt financial valuation. The system strictly checks $Q_{\text{onhand}} \ge Q_{\text{received}}$ for every line. If violated, voiding is blocked with `HTTP 409 Conflict`.
 - **Append-Only Immutability**: Original stock movements and journal entries remain untouched. Compensating movements and reversing journal entries are posted, maintaining a pristine, auditable transaction ledger.
+
+---
+
+## 11. Audit Trail & Transactional Outbox Architecture (Phase 08)
+
+### 11.1 Tamper-Evident Audit Trail Design
+- **Append-Only Immutable Records**: The `AuditEvent` table logs administrative, security, and financial domain operations. No update or delete operations are permitted.
+- **Tenant Isolation**: Every audit event includes a mandatory `companyId` foreign key and is indexed on `[companyId, createdAt]`.
+- **Correlation ID Tracking**: An HTTP header `X-Correlation-ID` is assigned or propagated via `CorrelationIdMiddleware` and stamped onto audit records and outbox events for cross-service traceability.
+- **Automatic Credential Sanitization**: The `AuditService` recursively parses change payloads (`oldValues`, `newValues`) and redacts passwords, tokens, API keys, and authorization secrets before persistence.
+
+### 11.2 Transactional Outbox Pattern
+To prevent dual-write vulnerabilities between database state updates and event publishing:
+- Business mutations (receipt posting, receipt voiding) and corresponding `OutboxEvent` creation execute inside the exact same PostgreSQL database transaction.
+- If the transaction fails, both business data and outbox events roll back completely.
+- The `OutboxProcessor` polls for pending events using `SELECT ... FOR UPDATE SKIP LOCKED`, allowing concurrent worker instances to claim disjoint event batches without locking conflicts.
+- Failed deliveries are retried using bounded exponential backoff with jitter ($2^{\text{retryCount}} \times 1\text{s}$) up to a configurable maximum retry limit (default 5).
+- Events exceeding maximum retries transition to `DEAD_LETTER` status, and an admin replay endpoint (`POST /api/v1/outbox/:id/replay`) enables operational recovery.
+
+---
+
+## 12. Concurrency & Reliability Hardening Verification (Phase 09)
+
+Phase 09 executed automated integration test scenarios on a live PostgreSQL database to stress and verify system resilience under concurrent conditions:
+
+1. **Scenario A (Double Posting Race Condition)**: Simultaneous requests attempting to post the same draft receipt serialize via `SELECT receipts FOR UPDATE`. Exactly one request succeeds, while competing requests receive `HTTP 409 Conflict`. Zero duplicate stock movements or GL entries are created.
+2. **Scenario B (Concurrent Stock Balance Updates)**: Two distinct receipts referencing the same SKU posted concurrently serialize cleanly on `stock_balances`. Both update quantities and moving average costs deterministically.
+3. **Scenario C (Initial Stock Balance Creation Race)**: Concurrent receipt postings for a newly created SKU execute `INSERT ... ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING`, eliminating unique constraint violations.
+4. **Scenario D (Safe Void Defense Under Stock Consumption)**: Attempting to void a posted receipt after partial or full consumption of inventory is strictly blocked with `HTTP 409 Conflict`, preventing negative inventory balances.
+5. **Scenario E (Concurrent Outbox Claiming)**: Multiple outbox workers concurrently claiming pending events via `SKIP LOCKED` claim mutually exclusive event batches with zero duplication.
+6. **Scenario F (Multi-Tenant Boundary Enforcement)**: Strict tenant-isolation tests confirm that cross-tenant queries, mutations, or audit lookups are safely rejected with `HTTP 403 Forbidden` or `HTTP 404 Not Found`.
 $$

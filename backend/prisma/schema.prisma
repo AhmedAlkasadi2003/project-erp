@@ -84,8 +84,10 @@ enum IdempotencyStatus {
 
 enum OutboxStatus {
   PENDING
+  PROCESSING
   PROCESSED
   FAILED
+  DEAD_LETTER
 }
 
 // ==============================================================================
@@ -448,21 +450,23 @@ model StockMovement {
 // ==============================================================================
 
 model AuditEvent {
-  id         String   @id @default(uuid())
-  companyId  String
-  userId     String?
-  action     String
-  entityType String
-  entityId   String
-  changes    Json?
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  id            String   @id @default(uuid())
+  companyId     String
+  userId        String?
+  action        String
+  entityType    String
+  entityId      String
+  changes       Json?
+  correlationId String?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
   user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([companyId, entityType, entityId])
   @@index([companyId, action, createdAt])
+  @@index([companyId, createdAt])
   @@map("audit_events")
 }
 
@@ -490,15 +494,22 @@ model OutboxEvent {
   aggregateType String
   aggregateId   String
   eventType     String
+  eventVersion  Int          @default(1)
   payload       Json
   status        OutboxStatus @default(PENDING)
   retryCount    Int          @default(0)
-  createdAt     DateTime     @default(now())
+  nextRetryAt   DateTime?
+  lockedAt      DateTime?
+  lockedBy      String?
+  lastError     String?
   processedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
-  @@index([status, createdAt])
+  @@index([status, nextRetryAt, createdAt])
   @@index([companyId, aggregateType, aggregateId])
+  @@index([lockedAt])
   @@map("outbox_events")
 }

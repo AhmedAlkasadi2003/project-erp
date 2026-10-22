@@ -4,7 +4,7 @@ This document records the confirmed assumptions, resolved technical decisions, a
 
 ---
 
-## 1. Confirmed Architectural Decisions (Phases 01, 02, 03, 04, 05, 06 & 07)
+## 1. Confirmed Architectural Decisions (Phases 01, 02, 03, 04, 05, 06, 07, 08 & 09)
 
 1. **Monorepo Architecture**:
    - The system is organized as a modular monorepo managed with `pnpm` workspaces (`backend` and `frontend`).
@@ -113,21 +113,42 @@ This document records the confirmed assumptions, resolved technical decisions, a
      - Compensating reversing movements (`referenceType = 'STOCK_MOVEMENT_REVERSAL'`) and a reversing journal entry (Debit GRN Clearing, Credit Inventory Asset) are posted within an open accounting period.
      - Original journal entry status is transitioned to `VOIDED`; receipt status transitions to `VOIDED` with `voidedAt`, `voidedById`, and `voidReason`.
 
+10. **Audit Trail & Correlation Invariants (Phase 08)**:
+    - **Tamper-Evident & Append-Only**: `AuditEvent` records are strictly append-only. No `UPDATE` or `DELETE` operations are supported on the audit table.
+    - **Tenant Isolation**: Every `AuditEvent` is scoped to a specific `companyId` and indexed on `@@index([companyId, createdAt])`.
+    - **Correlation Propagation**: Correlation IDs (`X-Correlation-ID`) are extracted by `CorrelationIdMiddleware`, attached to request context, and stamped on every `AuditEvent` and `OutboxEvent` for distributed traceability.
+    - **Credential Sanitization**: An automatic sanitization layer scrubs sensitive keys (e.g. `password`, `token`, `secret`, `authorization`, `creditCard`) before storing `oldValues` or `newValues` JSON payloads.
+
+11. **Transactional Outbox & Reliable Event Delivery (Phase 08)**:
+    - **Dual-Write Prevention**: `OutboxEvent` records are inserted inside the _exact same_ ACID database transaction as the business operation (`postReceipt` or `voidReceipt`), guaranteeing zero inconsistency between business data and event emission.
+    - **PostgreSQL Row-Level Claiming**: The outbox worker uses `SELECT ... FOR UPDATE SKIP LOCKED` to claim pending events without lock contention or worker collisions.
+    - **Lease Expiry & Dead-Letter Handling**: Claimed events carry a worker lease. If a worker crashes or abandons a lease, stale claims (`lockedAt < NOW() - 5m`) are automatically recovered.
+    - **Exponential Backoff & Jitter**: Failed event deliveries are retried with bounded exponential backoff ($2^{\text{retryCount}} \times 1\text{s}$) plus random jitter, up to a maximum retry limit (default 5). Events exceeding maximum retries are transitioned to `DEAD_LETTER` status.
+    - **Admin Replay Endpoint**: Failed or dead-letter events can be manually re-queued via `POST /api/v1/outbox/:id/replay` by authorized administrators.
+
+12. **Concurrency, Race Condition & Reliability Hardening (Phase 09)**:
+    - **Double Posting Defense**: Concurrency stress testing confirms that two simultaneous posting requests for the same receipt result in exactly one successful posting (`HTTP 200/201`) and one graceful rejection (`HTTP 409 Conflict`), with zero duplicate stock movements or GL journal entries.
+    - **Concurrent Stock Balance Updates**: Two distinct receipts posting the same SKU simultaneously serialize cleanly via PostgreSQL row locking (`SELECT stock_balances FOR UPDATE`), with correct cumulative quantities and weighted-average valuations.
+    - **Initial Balance Race Safety**: Parallel creation of stock balances for new SKUs uses `INSERT ... ON CONFLICT DO NOTHING` followed by row locking, eliminating unique constraint violations.
+    - **Safe Void Defense Under Consumption**: Submitting issues that deplete stock below the received quantity strictly blocks subsequent void requests (`HTTP 409 Conflict`), protecting inventory ledger integrity.
+    - **Disjoint Outbox Processing**: Multiple concurrent workers process disjoint outbox event batches via `SKIP LOCKED` without processing collisions or duplicate emissions.
+    - **Cross-Tenant IDOR Hardening**: Cross-tenant attempts to query, post, void, or audit entities belonging to other tenants are strictly rejected (`HTTP 403` or `HTTP 404`), preventing tenant data leakage.
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item                     | Impact on Phase 08          | Architectural Recommendation                                                                                                                            |
-| ------ | ----------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Frontend UI Receipt Workflow State Machine**  | Phase 08 Frontend UI        | Implement interactive state indicators: Draft, Posted, Voided, with modal confirmation displaying preview of expected debits, credits, and balances.    |
-| **Q2** | **Landed Cost Allocation**                      | Phase 08/09 Costing Engine  | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and clearing accounts. |
-| **Q3** | **Sub-ledger to General Ledger Reconciliation** | Phase 08/09 Audit & Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.  |
+| #      | Question / Requirement Item                     | Impact on Next Phase      | Architectural Recommendation                                                                                                                            |
+| ------ | ----------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | **Frontend UI Receipt Workflow State Machine**  | Frontend UI               | Implement interactive state indicators: Draft, Posted, Voided, with modal confirmation displaying preview of expected debits, credits, and balances.    |
+| **Q2** | **Landed Cost Allocation**                      | Future Enhancements       | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and clearing accounts. |
+| **Q3** | **Sub-ledger to General Ledger Reconciliation** | Audit & Financial Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.  |
 
 ---
 
 ## 3. Decisions Deferred to Later Phases
 
-1. **Frontend UI Pages & Interactive ERP Workflows (Phase 08)**:
+1. **Frontend UI Pages & Interactive ERP Workflows**:
    - Warehouse receipt entry UI, line reconciliation, receipt posting dialog with debit/credit preview, stock balance inquiry, voiding workflow with reason capture, and journal entry audit views.
-2. **Advanced Financial Reporting & Trial Balance (Phase 09)**:
+2. **Advanced Financial Reporting & Trial Balance**:
    - Trial Balance, Balance Sheet, Income Statement, and GL-to-Subledger reconciliation reports.

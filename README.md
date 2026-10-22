@@ -20,7 +20,9 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing**: ✅ **COMPLETED** (Moving weighted-average costing engine, PostgreSQL row-level concurrency locking, initial-balance race prevention, zero residual penny depletion, append-only stock movements, compensating reversals, balance queries and reconciliation API).
 - **Phase 06 — Accounting Foundation, Chart of Accounts & Accounting Periods**: ✅ **COMPLETED** (Chart of Accounts with tree hierarchy, cycle detection, accounting periods with boundary/overlap validation, company GRN clearing configuration, double-entry validation engine, draft journal entry management, 202/202 passing automated tests).
 - **Phase 07 — Atomic Receipt Posting, Inventory Integration & Safe Void Workflow**: ✅ **COMPLETED** (Atomic PostgreSQL transaction boundary, row-level locks, stock balance mutations, moving weighted-average cost updates, double-entry GL journal generation, idempotency key support, safe void reversal workflow with stock depletion defense, 226/226 passing automated tests).
-- **Phase 08 — Frontend User Interface & Enterprise Workflows**: ⏳ **NEXT UP** (React 19 UI, receipt entry forms, posting confirmation modal, void reason dialog, real-time stock and journal drill-downs).
+- **Phase 08 — Audit Trail & Transactional Outbox**: ✅ **COMPLETED** (Append-only tenant audit trail with credential sanitization, correlation ID propagation, transactional outbox pattern inside single ACID transaction, SKIP LOCKED processor, exponential backoff, dead-letter handling, admin replay).
+- **Phase 09 — Backend Integration Testing, Concurrency & Reliability Hardening**: ✅ **COMPLETED** (Live PostgreSQL concurrency test suite verifying double posting locks, concurrent moving average stock valuation, initial-balance upsert race safety, safe void stock consumption defense, concurrent outbox worker claiming, 264/264 passing automated tests).
+- **Phase 10 — Frontend User Interface & Enterprise Workflows**: ⏳ **NEXT UP** (React 19 UI, receipt entry forms, posting confirmation modal, void reason dialog, real-time stock and journal drill-downs).
 
 ---
 
@@ -160,6 +162,13 @@ curl -X POST http://localhost:4000/api/v1/receipts \
 - `POST /api/v1/journal-entries`: Create a validated draft journal entry (validates accounts, active status, open period, line count $\ge 2$, single legs, and exact $\sum \text{Debit} = \sum \text{Credit}$).
 - `POST /api/v1/journal-entries/validate`: Pure validation endpoint testing double-entry balancing and business rules without persisting.
 - `GET /api/v1/journal-entries/:id`: Retrieve journal entry document with sequential lines.
+
+### 5.6 Audit Trail & Transactional Outbox (Phase 08)
+
+- `GET /api/v1/audit-events`: Query tenant-scoped audit trail with pagination (`page`, `limit`), sorting (`sortBy`, `sortOrder`), action filter (`action`), entity filter (`entityType`, `entityId`), user filter (`userId`), and date range (`startDate`, `endDate`).
+- `GET /api/v1/audit-events/:id`: Retrieve single audit event record with sanitized changes payload.
+- `GET /api/v1/outbox/metrics`: Real-time system metrics for event delivery (`pending`, `processing`, `published`, `deadLetter`, `staleLeases`).
+- `POST /api/v1/outbox/:id/replay`: Re-queue a failed or dead-letter outbox event for immediate retry.
 
 ---
 

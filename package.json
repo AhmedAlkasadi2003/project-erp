@@ -17,6 +17,8 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f postgres",
+    "db:migrate": "pnpm --filter @inventory-erp/backend db:migrate",
+    "db:seed": "pnpm --filter @inventory-erp/backend db:seed",
     "dev:backend": "pnpm --filter @inventory-erp/backend start:dev",
     "dev:frontend": "pnpm --filter @inventory-erp/frontend dev"
   },

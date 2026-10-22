@@ -1,6 +1,6 @@
 # Implementation Plan — Inventory Receipts with Costing & GL Posting
 
-This document outlines the phased development roadmap for the **Inventory Receipts with Costing and GL Posting** ERP solution. In strict compliance with Phase 01 constraints, subsequent phases are planned here without premature implementation.
+This document outlines the phased development roadmap for the **Inventory Receipts with Costing and GL Posting** ERP solution.
 
 ---
 
@@ -13,44 +13,62 @@ flowchart LR
   P3 --> P4[Phase 04: Backend API & Validation]
   P4 --> P5[Phase 05: Frontend UI & Workflows]
   P5 --> P6[Phase 06: Integration, Audit & Handoff]
+
+  style P1 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P3 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
 ```
 
 ---
 
-## Phase 01: Professional Project Workspace Setup (Current Phase)
+## Phase 01: Professional Project Workspace Setup (COMPLETED)
 
 - **Objective**: Establish monorepo workspace, environment validation, Dockerized PostgreSQL, Prisma baseline, quality gates, and project documentation.
 - **Deliverables**: Root workspace, `backend/` NestJS workspace, `frontend/` React/Vite workspace, `docker-compose.yml`, CI workflow, and technical health probe.
-- **Exit Criteria**: All linters, type checks, tests, and builds succeed across root, backend, and frontend without any business code or domain tables.
+- **Exit Status**: 100% verified across linters, strict type checks, unit tests, E2E tests, and production builds.
 
 ---
 
-## Phase 02: Database Schema & Prisma Data Model
+## Phase 02: Database Foundation & Prisma Data Model (COMPLETED)
 
-- **Objective**: Design the relational schema and Prisma models capturing inventory, receipts, costing metadata, and General Ledger (GL) double-entry bookkeeping.
-- **Key Entities**:
-  - `Item`: SKU, description, unit of measure, valuation method (FIFO / Moving Average / Standard Cost), asset account, COGS account.
-  - `ReceiptHeader`: Receipt number, vendor, status (DRAFT, POSTED, CANCELLED), receipt date, total amount.
-  - `ReceiptLine`: Item reference, received quantity, unit cost, line subtotal, tax, inventory location/warehouse.
-  - `Account`: Chart of Accounts (Asset, Liability, Equity, Revenue, Expense) with code and description.
-  - `JournalEntry`: Transaction date, reference ID, source type (RECEIPT, ADJUSTMENT), posting timestamp.
-  - `JournalLine`: Entry reference, account reference, debit amount, credit amount.
-- **Constraints & Invariants**:
-  - Check constraint enforcing non-negative quantity and positive unit cost.
-  - Journal entry balancing constraint ($\sum \text{Debit} = \sum \text{Credit}$).
-  - Immutable audit trail for posted receipts.
+- **Objective**: Implement the relational database foundation, Prisma schema, migration workflow, and deterministic development seed.
+- **Implemented Entities**:
+  - `Company`: Multi-tenant organization boundary.
+  - `User`: Enterprise user identity and role-based permissions (`ADMIN`, `ACCOUNTANT`, `WAREHOUSE_MANAGER`, `CLERK`).
+  - `Warehouse`: Multi-site inventory locations.
+  - `Supplier`: Procurement counterparties with tax ID and payment terms.
+  - `Account`: Chart of Accounts (`ASSET`, `LIABILITY`, `EQUITY`, `REVENUE`, `EXPENSE`).
+  - `AccountingPeriod`: Fiscal period governance (`OPEN`, `CLOSED`).
+  - `Item`: Product master with valuation method and links to asset, COGS, and expense accounts.
+  - `StockBalance`: Real-time on-hand quantity, total value, and average cost with optimistic concurrency versioning.
+  - `Receipt` & `ReceiptLine`: Inventory receipt documents and line items with `Decimal(19, 4)` and `Decimal(18, 4)` precision.
+  - `StockMovement`: Append-only inventory transaction ledger.
+  - `JournalEntry` & `JournalLine`: Balanced double-entry financial accounting records.
+  - Supporting Infrastructure: `AuditEvent`, `IdempotencyRecord`, `OutboxEvent`.
+- **Migration & Seed**:
+  - Applied migration `20261022084335_init_database_foundation`.
+  - Created idempotent seed script (`backend/prisma/seed.ts` via `pnpm db:seed`).
+- **Exit Status**: Fully verified in PostgreSQL 16 container on port 5434; zero business workflows leaked into this phase.
 
 ---
 
-## Phase 03: Core Domain Services & Costing Engine
+## Phase 03: Core Domain Services & Costing Engine (NEXT PHASE)
 
-- **Objective**: Implement pure domain business logic and costing calculations isolated from transport protocols.
-- **Key Domain Services**:
-  - `CostingEngine`: Calculates inventory valuation upon receipt according to configured costing method (e.g. weighted moving average or FIFO layers).
-  - `PostingEngine`: Generates balanced double-entry accounting records:
-    - **Debit**: Inventory Asset Account (increase in asset value).
-    - **Credit**: Accounts Payable / Inventory Received Not Billed (Accrual).
-  - `ReceiptProcessingService`: Enforces state transitions (Draft $\to$ Posted) atomically inside a PostgreSQL ACID transaction.
+- **Objective**: Implement pure domain business logic, costing algorithms, and financial posting services isolated from transport controllers.
+- **Key Domain Services to Implement**:
+  - `CostingEngineService`:
+    - Moving Weighted-Average calculation formula:
+      $$\text{New Average Cost} = \frac{(\text{Current Qty} \times \text{Current Avg Cost}) + (\text{Received Qty} \times \text{Received Unit Cost})}{\text{Current Qty} + \text{Received Qty}}$$
+    - Handling zero on-hand quantity division and standard cost fallback.
+  - `PostingEngineService`:
+    - Generates balanced double-entry General Ledger journal records:
+      - **Debit**: Item Inventory Asset Account (`1200`) for total line valuation.
+      - **Credit**: Inventory Received Not Invoiced Accrual (`2100`) for total receipt amount.
+    - Strict validation invariant: $\sum \text{Debit} = \sum \text{Credit}$ (throws domain error if variance $\neq 0$).
+  - `ReceiptPostingService`:
+    - Orchestrates atomic state transition (`DRAFT` $\to$ `POSTED`) inside a PostgreSQL ACID transaction.
+    - Atomically updates `StockBalance`, writes `StockMovement` records, generates `JournalEntry`, and updates `Receipt` status.
+    - Enforces idempotency via `IdempotencyRecord`.
 
 ---
 

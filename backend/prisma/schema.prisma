@@ -1,9 +1,7 @@
 // ==============================================================================
 // Prisma Schema Configuration - Inventory Receipts ERP
 // ==============================================================================
-// Phase 01: Infrastructure only.
-// Domain entities (Inventory, Receipts, GL Accounts, Journal Entries)
-// are explicitly reserved for Phase 02 (Database Schema & Data Model).
+// Phase 02: Database Foundation & Relational Domain Models
 // ==============================================================================
 
 generator client {
@@ -13,4 +11,474 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ==============================================================================
+// ENUMS
+// ==============================================================================
+
+enum UserRole {
+  ADMIN
+  ACCOUNTANT
+  WAREHOUSE_MANAGER
+  CLERK
+}
+
+enum ValuationMethod {
+  MOVING_AVERAGE
+  FIFO
+  STANDARD_COST
+}
+
+enum ReceiptStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  TRANSFER
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountNormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  VOIDED
+}
+
+enum JournalSourceType {
+  RECEIPT
+  MANUAL
+  ADJUSTMENT
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+// ==============================================================================
+// TENANT & CORE MASTERS
+// ==============================================================================
+
+model Company {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  currency        String   @default("USD")
+  fiscalYearStart Int      @default(1) // Month number (1 = January)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users              User[]
+  warehouses         Warehouse[]
+  suppliers          Supplier[]
+  accounts           Account[]
+  accountingPeriods  AccountingPeriod[]
+  items              Item[]
+  receipts           Receipt[]
+  stockBalances      StockBalance[]
+  stockMovements     StockMovement[]
+  journalEntries     JournalEntry[]
+  auditEvents        AuditEvent[]
+  idempotencyRecords IdempotencyRecord[]
+  outboxEvents       OutboxEvent[]
+
+  @@map("companies")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  companyId String
+  email     String
+  name      String
+  role      UserRole @default(CLERK)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company               Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  receivedReceipts      Receipt[]       @relation("ReceiptReceiver")
+  stockMovements        StockMovement[] @relation("StockMovementUser")
+  createdJournalEntries JournalEntry[]  @relation("JournalEntryCreator")
+  postedJournalEntries  JournalEntry[]  @relation("JournalEntryPoster")
+  auditEvents           AuditEvent[]
+
+  @@unique([companyId, email])
+  @@index([companyId, role])
+  @@map("users")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  companyId String
+  code      String
+  name      String
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  stockBalances  StockBalance[]
+  stockMovements StockMovement[]
+  receipts       Receipt[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("warehouses")
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  companyId    String
+  code         String
+  name         String
+  taxId        String?
+  contactEmail String?
+  paymentTerms String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  receipts Receipt[]
+
+  @@unique([companyId, code])
+  @@index([companyId, isActive])
+  @@map("suppliers")
+}
+
+// ==============================================================================
+// CHART OF ACCOUNTS & GENERAL LEDGER
+// ==============================================================================
+
+model Account {
+  id            String               @id @default(uuid())
+  companyId     String
+  code          String
+  name          String
+  type          AccountType
+  normalBalance AccountNormalBalance
+  description   String?
+  isActive      Boolean              @default(true)
+  isReconciled  Boolean              @default(false)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assetItems   Item[]        @relation("ItemAssetAccount")
+  cogsItems    Item[]        @relation("ItemCogsAccount")
+  expenseItems Item[]        @relation("ItemExpenseAccount")
+  journalLines JournalLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, type, isActive])
+  @@map("accounts")
+}
+
+model AccountingPeriod {
+  id        String       @id @default(uuid())
+  companyId String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    PeriodStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  journalEntries JournalEntry[]
+
+  @@unique([companyId, name])
+  @@index([companyId, status, startDate, endDate])
+  @@map("accounting_periods")
+}
+
+model JournalEntry {
+  id              String             @id @default(uuid())
+  companyId       String
+  periodId        String
+  entryNumber     String
+  entryDate       DateTime
+  postingDate     DateTime?
+  status          JournalEntryStatus @default(DRAFT)
+  sourceType      JournalSourceType  @default(RECEIPT)
+  sourceReference String?
+  description     String
+  totalDebit      Decimal            @default(0) @db.Decimal(19, 4)
+  totalCredit     Decimal            @default(0) @db.Decimal(19, 4)
+  createdById     String
+  postedById      String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  period    AccountingPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  createdBy User             @relation("JournalEntryCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  postedBy  User?            @relation("JournalEntryPoster", fields: [postedById], references: [id], onDelete: Restrict)
+  lines     JournalLine[]
+  receipt   Receipt?
+
+  @@unique([companyId, entryNumber])
+  @@index([companyId, status, entryDate])
+  @@index([companyId, sourceType, sourceReference])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String   @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  lineNumber     Int
+  debit          Decimal  @default(0) @db.Decimal(19, 4)
+  credit         Decimal  @default(0) @db.Decimal(19, 4)
+  description    String?
+  createdAt      DateTime @default(now())
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([journalEntryId, lineNumber])
+  @@index([accountId])
+  @@map("journal_lines")
+}
+
+// ==============================================================================
+// INVENTORY & ITEM MASTER
+// ==============================================================================
+
+model Item {
+  id               String          @id @default(uuid())
+  companyId        String
+  sku              String
+  name             String
+  description      String?
+  uom              String          @default("PCS") // Unit of measure: PCS, KG, MTR, etc.
+  valuationMethod  ValuationMethod @default(MOVING_AVERAGE)
+  standardCost     Decimal?        @db.Decimal(19, 4)
+  assetAccountId   String
+  cogsAccountId    String
+  expenseAccountId String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  assetAccount   Account         @relation("ItemAssetAccount", fields: [assetAccountId], references: [id], onDelete: Restrict)
+  cogsAccount    Account         @relation("ItemCogsAccount", fields: [cogsAccountId], references: [id], onDelete: Restrict)
+  expenseAccount Account?        @relation("ItemExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  receiptLines   ReceiptLine[]
+  stockBalances  StockBalance[]
+  stockMovements StockMovement[]
+
+  @@unique([companyId, sku])
+  @@index([companyId, isActive])
+  @@index([assetAccountId])
+  @@index([cogsAccountId])
+  @@map("items")
+}
+
+model StockBalance {
+  id             String   @id @default(uuid())
+  companyId      String
+  warehouseId    String
+  itemId         String
+  quantityOnHand Decimal  @default(0) @db.Decimal(18, 4)
+  totalValue     Decimal  @default(0) @db.Decimal(19, 4)
+  averageCost    Decimal  @default(0) @db.Decimal(19, 4)
+  version        Int      @default(1)
+  updatedAt      DateTime @updatedAt
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, warehouseId, itemId])
+  @@index([companyId, itemId])
+  @@index([companyId, warehouseId])
+  @@map("stock_balances")
+}
+
+// ==============================================================================
+// INVENTORY RECEIPTS
+// ==============================================================================
+
+model Receipt {
+  id               String        @id @default(uuid())
+  companyId        String
+  warehouseId      String
+  supplierId       String
+  receiptNumber    String
+  status           ReceiptStatus @default(DRAFT)
+  receiptDate      DateTime      @default(now())
+  postingDate      DateTime?
+  receivedByUserId String
+  journalEntryId   String?       @unique
+  subtotal         Decimal       @default(0) @db.Decimal(19, 4)
+  taxAmount        Decimal       @default(0) @db.Decimal(19, 4)
+  totalAmount      Decimal       @default(0) @db.Decimal(19, 4)
+  notes            String?
+  version          Int           @default(1)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  supplier       Supplier        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  receivedByUser User            @relation("ReceiptReceiver", fields: [receivedByUserId], references: [id], onDelete: Restrict)
+  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  lines          ReceiptLine[]
+  stockMovements StockMovement[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, status, receiptDate])
+  @@index([companyId, supplierId])
+  @@index([companyId, warehouseId])
+  @@map("receipts")
+}
+
+model ReceiptLine {
+  id               String   @id @default(uuid())
+  receiptId        String
+  itemId           String
+  lineNumber       Int
+  quantityReceived Decimal  @db.Decimal(18, 4)
+  unitCost         Decimal  @db.Decimal(19, 4)
+  subtotal         Decimal  @db.Decimal(19, 4)
+  taxAmount        Decimal  @default(0) @db.Decimal(19, 4)
+  totalAmount      Decimal  @db.Decimal(19, 4)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  receipt        Receipt         @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item           Item            @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  stockMovements StockMovement[]
+
+  @@unique([receiptId, lineNumber])
+  @@index([itemId])
+  @@map("receipt_lines")
+}
+
+model StockMovement {
+  id                String            @id @default(uuid())
+  companyId         String
+  warehouseId       String
+  itemId            String
+  receiptId         String?
+  receiptLineId     String?
+  movementType      StockMovementType
+  quantity          Decimal           @db.Decimal(18, 4)
+  unitCost          Decimal           @db.Decimal(19, 4)
+  totalCost         Decimal           @db.Decimal(19, 4)
+  balanceAfter      Decimal           @db.Decimal(18, 4)
+  averageCostAfter  Decimal           @db.Decimal(19, 4)
+  referenceType     String
+  referenceId       String
+  movementDate      DateTime          @default(now())
+  performedByUserId String
+  createdAt         DateTime          @default(now())
+
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  item            Item         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  receipt         Receipt?     @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  receiptLine     ReceiptLine? @relation(fields: [receiptLineId], references: [id], onDelete: Restrict)
+  performedByUser User         @relation("StockMovementUser", fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, itemId, warehouseId, movementDate])
+  @@index([companyId, movementType, movementDate])
+  @@index([referenceType, referenceId])
+  @@map("stock_movements")
+}
+
+// ==============================================================================
+// SUPPORTING ENTERPRISE INFRASTRUCTURE
+// ==============================================================================
+
+model AuditEvent {
+  id         String   @id @default(uuid())
+  companyId  String
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  changes    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, entityType, entityId])
+  @@index([companyId, action, createdAt])
+  @@map("audit_events")
+}
+
+model IdempotencyRecord {
+  id             String            @id @default(uuid())
+  companyId      String
+  idempotencyKey String
+  operation      String
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseHash   String?
+  responseData   Json?
+  createdAt      DateTime          @default(now())
+  expiresAt      DateTime
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, idempotencyKey])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid())
+  companyId     String
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  retryCount    Int          @default(0)
+  createdAt     DateTime     @default(now())
+  processedAt   DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([companyId, aggregateType, aggregateId])
+  @@map("outbox_events")
 }

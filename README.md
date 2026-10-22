@@ -4,17 +4,18 @@
 ![Node Version](https://img.shields.io/badge/node-v24.20.0-blue.svg)
 ![pnpm Version](https://img.shields.io/badge/pnpm-v11.25.0-orange.svg)
 ![PostgreSQL](https://img.shields.io/badge/postgresql-16--alpine-336791.svg)
+![Prisma](https://img.shields.io/badge/prisma-6.19.3-2d3748.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-strict-3178c6.svg)
 
 An enterprise-grade ERP system for handling **Inventory Receipts**, calculating real-time **Inventory Valuation & Costing**, and executing immediate **General Ledger (GL) Double-Entry Journal Postings**.
 
 ---
 
-## 1. Project Purpose & Scope
+## 1. Project Purpose & Current Phase Status
 
-This repository provides the multi-package development workspace for the Inventory Receipts ERP solution.
-
-> **Phase 01 Constraint**: This phase is strictly limited to establishing a robust, production-minded monorepo development environment, quality gates, database orchestration, health probes, and architectural documentation. No business pages, receipt workflows, costing algorithms, or domain models are implemented in Phase 01.
+- **Phase 01 — Project Workspace Setup**: ✅ **COMPLETED** (Monorepo architecture, Docker Compose, NestJS 11, React 19, strict quality gates).
+- **Phase 02 — Database Foundation & Prisma**: ✅ **COMPLETED** (PostgreSQL 16 relational data model, Prisma ORM 6, migrations, deterministic seed, strict Decimal precision).
+- **Phase 03 — Core Domain Services & Costing Engine**: ⏳ **NEXT UP** (Moving average costing calculation, double-entry GL posting rules, atomic state transitions).
 
 ---
 
@@ -22,7 +23,7 @@ This repository provides the multi-package development workspace for the Invento
 
 - **Backend**: [NestJS 11](https://nestjs.com/) + [TypeScript 5.7+](https://www.typescriptlang.org/) (Strict Mode)
 - **Database**: [PostgreSQL 16 Alpine](https://www.postgresql.org/)
-- **ORM**: [Prisma ORM 6.4+](https://www.prisma.io/)
+- **ORM**: [Prisma ORM 6.19+](https://www.prisma.io/)
 - **Frontend**: [React 19](https://react.dev/) + [Vite 6](https://vitejs.dev/) + [TypeScript 5.7+](https://www.typescriptlang.org/)
 - **Package Manager & Monorepo**: [pnpm 11](https://pnpm.io/) Workspaces
 - **Containerization**: [Docker](https://www.docker.com/) & Docker Compose
@@ -30,40 +31,28 @@ This repository provides the multi-package development workspace for the Invento
 
 ---
 
-## 3. Repository Structure
+## 3. Database Architecture & Data Model
 
-```
-inventory-receipts-erp/
-├── backend/                  # NestJS server application workspace
-├── frontend/                 # React client application workspace
-├── docs/                     # Architectural guides, audits, and planning
-│   ├── INITIAL_ENVIRONMENT_AUDIT.md
-│   ├── IMPLEMENTATION_PLAN.md
-│   └── PROJECT_STRUCTURE.md
-├── .github/
-│   └── workflows/
-│       └── ci.yml            # Automated CI verification workflow
-├── .editorconfig             # Universal editor layout configuration
-├── .env.example              # Docker Compose environment template
-├── .gitattributes            # Line-ending and binary tracking rules
-├── .gitignore                # Global ignore rules
-├── .prettierignore           # Prettier ignore list
-├── .prettierrc               # Prettier style guide
-├── docker-compose.yml        # PostgreSQL 16 container definition
-├── package.json              # Monorepo root scripts & dev tools
-├── pnpm-lock.yaml            # Pinned dependency lockfile
-├── pnpm-workspace.yaml       # Workspace packages and build permissions
-├── README.md                 # Primary project documentation
-├── DESIGN.md                 # System architecture and domain boundary design
-├── ASSUMPTIONS.md            # Confirmed assumptions and open questions
-└── AI_USAGE.md               # AI assistance disclosure and audit log
-```
+The database foundation is fully implemented in PostgreSQL via Prisma migrations (`20261022084335_init_database_foundation`):
+
+### 3.1 Core Entity Map
+
+- **Tenant Root**: `Company` (currency, fiscal year boundary, multi-tenant isolation).
+- **Organization & Masters**: `User`, `Warehouse`, `Supplier`, `Item` (with links to asset, COGS, and expense accounts).
+- **Inventory Documents**: `Receipt`, `ReceiptLine` (procurement intake and lines).
+- **Inventory Ledger**: `StockBalance` (real-time on-hand quantity, total value, average cost, version) and `StockMovement` (append-only audit ledger).
+- **General Ledger**: `Account` (Chart of Accounts), `AccountingPeriod` (fiscal window controls), `JournalEntry`, `JournalLine` (double-entry balancing).
+- **Enterprise Infrastructure**: `AuditEvent`, `IdempotencyRecord`, `OutboxEvent`.
+
+### 3.2 Precision Standards
+
+- **Monetary & Financial Values**: `DECIMAL(19, 4)` (15 integer digits, 4 fractional digits).
+- **Unit Costs**: `DECIMAL(19, 4)` (prevents intermediate rounding drift in moving average calculations).
+- **Quantities**: `DECIMAL(18, 4)` (supports fractional units of measure: KG, Liters, Meters).
 
 ---
 
 ## 4. Prerequisites
-
-Ensure your system meets the following prerequisites:
 
 | Requirement        | Minimum / Tested Version           | Installation Guide                                           |
 | ------------------ | ---------------------------------- | ------------------------------------------------------------ |
@@ -77,77 +66,40 @@ Ensure your system meets the following prerequisites:
 
 ## 5. Installation & Setup
 
-### 5.1 Clone & Install Dependencies
-
-Clone the repository and install all workspace dependencies from the root:
-
 ```bash
-git clone <repository-url>
-cd project-erp
-
-# Install all monorepo dependencies
+# 1. Install all monorepo dependencies
 pnpm install
-```
 
-### 5.2 Environment Configuration
-
-Copy the template configuration files:
-
-```bash
-# Root Docker Compose orchestration template
+# 2. Configure environment files
 cp .env.example .env
-
-# Backend environment template
 cp backend/.env.example backend/.env
-
-# Frontend environment template
 cp frontend/.env.example frontend/.env
+
+# 3. Start PostgreSQL container in background (port 5434)
+pnpm docker:up
+
+# 4. Apply Prisma database migrations
+pnpm db:migrate
+
+# 5. Seed development master data (idempotent)
+pnpm db:seed
 ```
 
 ---
 
 ## 6. Running the System
 
-### 6.1 Start PostgreSQL via Docker Compose
-
-To avoid port conflicts with local PostgreSQL instances running on default port `5432`, the container maps to host port **`5434`**:
-
 ```bash
-# Start PostgreSQL container in background
-pnpm docker:up
+# Start Backend API in development watch mode (port 4000)
+pnpm dev:backend
 
-# Check container health status
-docker compose ps
-
-# View database logs
-pnpm docker:logs
-
-# Stop database container when needed
-pnpm docker:down
+# Start Frontend Client in development server (port 5173)
+pnpm dev:frontend
 ```
 
-### 6.2 Start Backend Service (NestJS)
-
-In a separate terminal:
-
-```bash
-# Start backend in development watch mode
-pnpm --filter @inventory-erp/backend start:dev
-```
-
-- API Base: `http://localhost:4000/api/v1`
-- Health Endpoint: `http://localhost:4000/api/v1/health`
-
-### 6.3 Start Frontend Service (React + Vite)
-
-In a separate terminal:
-
-```bash
-# Start frontend development server
-pnpm --filter @inventory-erp/frontend dev
-```
-
-- Client Application Shell: `http://localhost:5173`
+- **Frontend Client Shell**: `http://localhost:5173`
+- **Backend Health Check**: `http://localhost:4000/api/v1/health`
+- **PostgreSQL Connection String**: `postgresql://erp_user:erp_password_local_dev@localhost:5434/inventory_erp_dev?schema=public`
 
 ---
 
@@ -180,25 +132,32 @@ pnpm build
 
 ---
 
-## 8. Troubleshooting Guide
+## 8. Development Seed Overview
 
-### Port `5434` or `5432` Conflict
+The deterministic development seed (`pnpm db:seed`) provides:
 
-- The default development port for PostgreSQL is `5434`. If this port is occupied, update `POSTGRES_PORT` in `.env` and `DATABASE_URL` in `backend/.env`.
-
-### Database Health Probe Degraded
-
-- When PostgreSQL is not running, `GET /api/v1/health` returns status `degraded` and reports `services.database.status: down`. Start the database using `pnpm docker:up`.
-
-### pnpm Ignored Build Scripts (`allowBuilds`)
-
-- In pnpm 11, package lifecycle scripts are restricted by default. Allowed dependencies (`@prisma/client`, `@prisma/engines`, `esbuild`, `prisma`) are declared in `pnpm-workspace.yaml`. If you add new packages requiring native compilation, run `pnpm approve-builds`.
+- **Tenant Company**: `COMP-01` ("Acme Industrial Systems Ltd", USD)
+- **Administrator User**: `admin@acme-erp.local` (Role: `ADMIN`)
+- **Warehouse**: `WH-MAIN` ("Central Distribution Warehouse")
+- **Supplier**: `SUP-001` ("Apex Raw Materials Corp")
+- **Chart of Accounts**:
+  - `1200`: `Inventory - Raw Materials` (ASSET, DEBIT)
+  - `2000`: `Accounts Payable` (LIABILITY, CREDIT)
+  - `2100`: `Inventory Received Not Invoiced (Accrual)` (LIABILITY, CREDIT)
+  - `5000`: `Cost of Goods Sold (COGS)` (EXPENSE, DEBIT)
+  - `5100`: `Inventory Adjustments / Variance` (EXPENSE, DEBIT)
+- **Accounting Period**: Current active fiscal month (Status: `OPEN`)
+- **Inventory Items**:
+  - `SKU-STEEL-10`: `Cold-Rolled Steel Sheet 10mm` (UOM: `KG`, Moving Average, $15.5000)
+  - `SKU-BOLT-M12`: `Industrial Hex Bolt M12x50` (UOM: `PCS`, Standard Cost, $2.2500)
+- **Initial Stock**: Initialized at 0 on-hand quantity and $0.0000 valuation.
 
 ---
 
-## 9. Next Phase: Phase 02
+## 9. Next Phase: Phase 03
 
-The foundation is prepared for **Phase 02 — Database Schema and Prisma Data Model**:
+**Phase 03 — Core Domain Services & Costing Engine**:
 
-- Designing relational tables for Items, Inventory Receipts, Chart of Accounts, and GL Journal Entries.
-- Applying PostgreSQL foreign key constraints, balancing checks, and Prisma migrations.
+- Implementing `CostingEngineService` (moving weighted-average formula & standard cost).
+- Implementing `PostingEngineService` (generating balanced General Ledger debit/credit entries).
+- Implementing `ReceiptPostingService` (atomic PostgreSQL ACID transaction updating stock, ledger, and status).

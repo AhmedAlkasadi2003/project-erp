@@ -1,49 +1,61 @@
 # Assumptions & Open Architectural Questions
 
-This document records the baseline assumptions, open questions, and deferred decisions established during **Phase 01 — Project Workspace Setup** for the **Inventory Receipts with Costing and GL Posting** ERP system.
+This document records the confirmed assumptions, resolved technical decisions, and open questions across development phases for the **Inventory Receipts with Costing and GL Posting** ERP system.
 
 ---
 
-## 1. Confirmed Architectural Assumptions
+## 1. Confirmed Architectural Decisions (Phases 01 & 02)
 
 1. **Monorepo Architecture**:
-   - The system is organized as a modular monorepo managed with `pnpm` workspaces.
-   - The backend (NestJS) and frontend (React + Vite) are physically independent packages with isolated dependencies, build artifacts, and configuration files.
+   - The system is organized as a modular monorepo managed with `pnpm` workspaces (`backend` and `frontend`).
+   - Packages maintain independent `package.json` manifests and TypeScript compilation contexts.
 
-2. **Database Engine & Persistence**:
-   - PostgreSQL 16 is the standard enterprise relational database engine.
-   - Prisma ORM 6 manages schema definitions, migrations, and type-safe database queries.
-   - Development container port is configured to host port **`5434`** (forwarding to container port `5432`) to prevent port collision with host-installed database engines.
+2. **Database Engine & Persistence (Phase 02)**:
+   - PostgreSQL 16 is the standard database engine running via Docker Compose on host port **`5434`** (forwarded to container port `5432`).
+   - Prisma ORM 6.19+ manages schema definitions, migration SQL generation, and type-safe query execution.
+   - Initial migration `20261022084335_init_database_foundation` successfully applies 17 relational tables, 11 enums, and foreign key constraints.
 
-3. **Accounting & Costing Model**:
-   - Double-entry bookkeeping rule is absolute: every posted inventory receipt generates a balanced journal entry where total debits equal total credits ($\sum \text{Debits} = \sum \text{Credits}$).
-   - Inventory receipts operate in a perpetual inventory accounting model:
-     - **Debit**: Inventory Asset Account (increases asset balance).
-     - **Credit**: Accounts Payable / Received Not Invoiced Accrual Account.
-   - System assumes a single base reporting currency. Multi-currency and FX exchange adjustments are out of scope for early phases.
+3. **Decimal Precision & Monetary Invariants**:
+   - Monetary amounts (`totalAmount`, `debit`, `credit`, `taxAmount`, `subtotal`) are typed as **`DECIMAL(19, 4)`**.
+   - Unit costs (`unitCost`, `averageCost`, `standardCost`) are typed as **`DECIMAL(19, 4)`** to prevent fractional rounding drift during moving average calculations.
+   - Quantities (`quantityReceived`, `quantityOnHand`, `quantity`) are typed as **`DECIMAL(18, 4)`** to support fractional units of measure (e.g. KG, Liters, Meters).
+   - Floating-point arithmetic (`FLOAT`/`DOUBLE PRECISION`) is strictly forbidden.
 
-4. **Phase 01 Boundary Constraint**:
-   - Phase 01 is strictly restricted to workspace setup, dependency management, developer tooling, health verification, and architectural documentation.
-   - No business entities, receipt pages, inventory models, GL posting logic, or domain endpoints are implemented in Phase 01.
+4. **Multi-Tenancy & Referential Integrity**:
+   - `companyId` is mandatory across all domain records.
+   - Intra-tenant uniqueness is enforced via compound unique indexes:
+     - `@@unique([companyId, code])`
+     - `@@unique([companyId, sku])`
+     - `@@unique([companyId, receiptNumber])`
+     - `@@unique([companyId, entryNumber])`
+     - `@@unique([companyId, warehouseId, itemId])`
+   - Master entities (`Account`, `Item`, `Warehouse`, `Supplier`, `Company`) enforce `onDelete: Restrict` to preserve transaction history and financial audit trails.
+
+5. **Accounting & Costing Model**:
+   - Double-entry balance rule is non-negotiable:
+     $$\sum \text{Debit} = \sum \text{Credit}$$
+   - Inventory receipts operate in a perpetual inventory model:
+     - **Debit**: Inventory Asset Account (`1200`)
+     - **Credit**: Inventory Received Not Invoiced Accrual (`2100`)
+   - Stock movements are strictly append-only in `StockMovement`.
+   - Optimistic concurrency control is enabled on `StockBalance` and `Receipt` via an integer `version` field.
 
 ---
 
-## 2. Unresolved Questions & Stakeholder Inputs
+## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item          | Impact on Next Phases                                                                    | Preliminary Recommendation                                                                                                          |
-| ------ | ------------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Costing Valuation Method**         | Impacts Phase 02 schema & Phase 03 calculation engine.                                   | Implement Moving Weighted Average as the primary valuation policy, while leaving item-level flexibility for Standard Cost and FIFO. |
-| **Q2** | **Landed Cost & Additional Charges** | Determines whether freight, customs, and handling fees are added to item inventory cost. | Support optional landed cost line items distributed proportionately by receipt line value or quantity.                              |
-| **Q3** | **Warehouse & Bin Granularity**      | Determines whether receipts specify multi-warehouse locations or single default site.    | Include a `warehouseId` on receipt lines, defaulting to a primary warehouse.                                                        |
-| **Q4** | **Purchase Order (PO) Association**  | Affects receipt entry workflow and line matching.                                        | Allow standalone receipts while providing an optional `purchaseOrderRef` attribute.                                                 |
+| #      | Question / Requirement Item          | Impact on Phase 03       | Architectural Recommendation                                                                                                                                                    |
+| ------ | ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | **Costing Method Priority**          | Phase 03 Costing Engine  | Focus primarily on **Moving Weighted Average** as the core active calculation algorithm, with a clean interface for **Standard Cost** fallback and future FIFO layer expansion. |
+| **Q2** | **Zero / Negative Stock Handling**   | Phase 03 Stock Ledger    | Inventory receipts always increment stock ($\ge 0$). In the event an item has zero current on-hand quantity, the new unit cost is set directly to the received unit cost.       |
+| **Q3** | **Landed Cost Distribution**         | Phase 03 & 04            | In Phase 03, support direct unit cost per receipt line. Advanced proportional freight allocation can be added as a secondary service.                                           |
+| **Q4** | **Reversal & Cancellation Workflow** | Phase 03 Posting Service | A posted receipt cannot be deleted. Cancellation must create an offsetting reversing receipt and matching reversing journal entry.                                              |
 
 ---
 
 ## 3. Decisions Deferred to Later Phases
 
 1. **Authentication & Authorization**:
-   - User identity, JWT issuance, password hashing, and role-based access control (RBAC) are deferred to dedicated security milestones.
-2. **Third-Party Integration**:
-   - External ERP sync (SAP, NetSuite) or external accounting system export is deferred.
-3. **Advanced Financial Reports**:
-   - Balance sheets, profit and loss statements, and multi-period trial balance reporting are deferred to post-MVP phases.
+   - JWT tokens, password hashing (Argon2/Bcrypt), and RBAC route guards are deferred to Phase 04 API development.
+2. **Advanced Reporting UI**:
+   - Balance sheets, trial balance exports, and analytics dashboard components are deferred to Phase 05/06.

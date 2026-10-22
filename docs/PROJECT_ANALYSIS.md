@@ -1,8 +1,8 @@
 # Project Domain & Database Architecture Analysis
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Phase**: Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy  
-**Author**: Senior Software Engineer & Software Architect
+**Phase**: Phase 04 — Inventory Receipts Drafts & Management API  
+**Author**: Principal / Senior Backend Engineer & Software Architect
 
 ---
 
@@ -19,7 +19,9 @@ In classic accounting, when goods arrive at a warehouse:
 
 Phase 02 established the relational schema, foreign key constraints, indexes, and precision standards necessary to enforce these rules at the database engine level.
 
-Phase 03 establishes the security perimeter, authentication foundation, role-based access control (RBAC), multi-tenant isolation barriers, and API hardening required to operate this system securely in an enterprise multi-company environment.
+Phase 03 established the security perimeter, authentication foundation, role-based access control (RBAC), multi-tenant isolation barriers, and API hardening.
+
+Phase 04 implements the complete backend API and domain invariants for managing **draft inventory receipts** and their line items prior to financial posting or stock ledger mutation.
 
 ---
 
@@ -58,7 +60,7 @@ erDiagram
 ### 3.1 Tenant Root & Organization
 
 - **`Company`**: Represents the tenant boundary. Every critical entity carries a `companyId` foreign key. Compound unique constraints (e.g. `[companyId, sku]`, `[companyId, code]`, `[companyId, receiptNumber]`) prevent cross-tenant key collisions while allowing independent numbering sequences per company.
-- **`User`**: System actors with defined enterprise roles (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`, `CLERK`, `VIEWER`). Scoped per company via `@@unique([companyId, email])`.
+- **`User`**: System actors with defined enterprise roles (`SUPER_ADMIN`, `ADMIN`, `ACCOUNTANT`, `WAREHOUSE_MANAGER`, `CLERK`). Scoped per company via `@@unique([companyId, email])`.
 - **`Warehouse`**: Physical storage locations where stock balances reside.
 - **`Supplier`**: External procurement counterparties.
 
@@ -155,23 +157,40 @@ flowchart TD
 
 ### 6.2 Password Security & Cryptography
 
-- **Algorithm**: **Argon2id** (the winner of the Password Hashing Competition, resistant to both GPU and side-channel attacks) implemented via `@node-rs/argon2`.
-- **Enumeration Prevention**: Login endpoint (`POST /api/v1/auth/login`) returns an identical, generic `HTTP 401: Invalid company, email, or password` message regardless of whether the company code, email, or password was incorrect.
-- **Token Format**: Standard JSON Web Tokens (JWT) signed with HMAC-SHA256 (`JWT_SECRET`), containing minimal claims (`sub`, `email`, `role`, `companyId`).
-- **Dynamic Revalidation**: Rather than trusting stale claims in the JWT indefinitely, every protected request verifies with the database that:
-  1. The user account still exists.
-  2. `user.isActive === true`.
-  3. The user's tenant `company.isActive === true`.
+- **Algorithm**: **Argon2id** via `@node-rs/argon2`.
+- **Enumeration Prevention**: Generic `HTTP 401: Invalid company, email, or password` message.
+- **Dynamic Revalidation**: Verifies user existence, `user.isActive`, and `company.isActive` on every request.
 
-### 6.3 Multi-Tenant Isolation Guarantees
+---
 
-In multi-tenant ERP architectures, data leakage between tenants is catastrophic. Multi-tenancy in this system is enforced across three distinct layers:
+## 7. Phase 04 Receipt Draft Management & Business Invariants
 
-1. **Database Layer (Primary Invariant)**:
-   - Every tenant-owned table carries a non-nullable `companyId` foreign key.
-   - Compound indexes ensure uniqueness per tenant (e.g. `[companyId, code]`).
-2. **Framework & Guard Layer (Boundary Invariant)**:
-   - `CompanyAccessGuard` intercepts any route referencing `:companyId`. If `req.user.companyId !== params.companyId` (and the user is not `SUPER_ADMIN`), access is immediately denied with `HTTP 403 Forbidden`.
-3. **Application & Query Layer (Data Invariant)**:
-   - Application services explicitly scope all Prisma queries with `where: { companyId }`.
-   - Never accept an unverified tenant identifier from client request bodies.
+### 7.1 Receipt Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT : Create Receipt (1+ lines)
+    DRAFT --> DRAFT : Update Header / Reconcile Lines / Add Line / Remove Line
+    DRAFT --> Deleted : Delete Draft (Cascades lines)
+    DRAFT --> POSTED : Future Phase 05 Post (Atomic GL & Costing)
+    POSTED --> CANCELLED : Future Phase 05 Reversal
+    POSTED --> [*] : Immutable Financial History
+    CANCELLED --> [*] : Preserved Audit Record
+```
+
+### 7.2 Financial Calculation & Decimal Invariants
+
+Receipt lines and header totals are never accepted from untrusted client input. The server enforces deterministic arithmetic via `DecimalMath` utilizing `Prisma.Decimal` and `ROUND_HALF_UP` rounding to 4 decimal places:
+
+$$\text{Line Subtotal} = \text{round}_4(\text{quantityReceived} \times \text{unitCost})$$
+$$\text{Line Total Amount} = \text{round}_4(\text{Line Subtotal} + \text{taxAmount})$$
+$$\text{Receipt Subtotal} = \sum_{i=1}^n \text{Line Subtotal}_i$$
+$$\text{Receipt Tax Amount} = \sum_{i=1}^n \text{taxAmount}_i$$
+$$\text{Receipt Total Amount} = \text{Receipt Subtotal} + \text{Receipt Tax Amount}$$
+
+### 7.3 Multi-Tenant Boundary Enforcement for Inventory Receipts
+
+1. **Entity Ownership Verification**: Before creating or modifying a receipt, `ReceiptsService` validates that the warehouse, supplier, and all line item IDs exist, belong to `user.companyId`, and have `isActive === true`. Attempting to reference entities from another company is rejected with `HTTP 400 Bad Request`.
+2. **IDOR & Scoped Access**: Any attempt to retrieve, update, or delete a receipt belonging to another tenant is blocked with `HTTP 403 Forbidden` (`Cross-company access denied`).
+3. **Sequential Line Numbering**: Line numbers (`lineNumber`) are maintained sequentially ($1, 2, \dots, n$) without gaps during line additions, deletions, or reconciliations.
+4. **Draft-Only Mutation Invariant**: Once a receipt transitions out of `DRAFT` status (`POSTED` or `CANCELLED`), updates and deletions are strictly blocked with `HTTP 400 Bad Request` or `HTTP 409 Conflict`.

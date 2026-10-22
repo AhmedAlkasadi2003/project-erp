@@ -1,0 +1,177 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { ReceiptsService } from './receipts.service';
+import { CreateReceiptDto } from './dto/create-receipt.dto';
+import { UpdateReceiptDto } from './dto/update-receipt.dto';
+import { CreateReceiptLineDto } from './dto/create-receipt-line.dto';
+import { UpdateReceiptLineDto } from './dto/update-receipt-line.dto';
+import { ReplaceReceiptLinesDto } from './dto/replace-receipt-lines.dto';
+import { QueryReceiptsDto } from './dto/query-receipts.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CompanyAccessGuard } from '../common/guards/company-access.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
+
+@Controller('receipts')
+@UseGuards(JwtAuthGuard, CompanyAccessGuard, RolesGuard)
+export class ReceiptsController {
+  constructor(private readonly receiptsService: ReceiptsService) {}
+
+  /**
+   * Create a new draft receipt with lines.
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
+  async createReceipt(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateReceiptDto) {
+    return this.receiptsService.createReceipt(user.companyId, user.id, dto);
+  }
+
+  /**
+   * List receipts with pagination, filtering, and sorting.
+   */
+  @Get()
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
+  async listReceipts(@CurrentUser() user: AuthenticatedUser, @Query() query: QueryReceiptsDto) {
+    return this.receiptsService.listReceipts(user.companyId, user.role, query);
+  }
+
+  /**
+   * Retrieve a specific receipt by ID.
+   */
+  @Get(':id')
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
+  async getReceiptById(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.receiptsService.getReceiptById(user.companyId, user.role, id);
+  }
+
+  /**
+   * Update header fields of a draft receipt.
+   */
+  @Patch(':id')
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async updateReceipt(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateReceiptDto,
+  ) {
+    return this.receiptsService.updateReceipt(user.companyId, user.role, id, dto);
+  }
+
+  /**
+   * Replace or reconcile draft lines atomically.
+   */
+  @Put(':id/lines')
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async replaceReceiptLines(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceReceiptLinesDto,
+  ) {
+    return this.receiptsService.replaceReceiptLines(user.companyId, user.role, id, dto);
+  }
+
+  /**
+   * Alias for PATCH :id/lines for flexible REST client compatibility.
+   */
+  @Patch(':id/lines')
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async patchReceiptLines(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReplaceReceiptLinesDto,
+  ) {
+    return this.receiptsService.replaceReceiptLines(user.companyId, user.role, id, dto);
+  }
+
+  /**
+   * Add a single line to a draft receipt.
+   */
+  @Post(':id/lines')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async addLine(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateReceiptLineDto,
+  ) {
+    return this.receiptsService.addLine(user.companyId, user.role, id, dto);
+  }
+
+  /**
+   * Update a specific line in a draft receipt.
+   */
+  @Patch(':id/lines/:lineId')
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async updateLine(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('lineId', ParseUUIDPipe) lineId: string,
+    @Body() dto: UpdateReceiptLineDto,
+  ) {
+    return this.receiptsService.updateLine(user.companyId, user.role, id, lineId, dto);
+  }
+
+  /**
+   * Remove a single line from a draft receipt.
+   */
+  @Delete(':id/lines/:lineId')
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  async removeLine(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('lineId', ParseUUIDPipe) lineId: string,
+  ) {
+    return this.receiptsService.removeLine(user.companyId, user.role, id, lineId);
+  }
+
+  /**
+   * Delete a draft receipt.
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.SUPER_ADMIN)
+  async deleteReceipt(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.receiptsService.deleteReceipt(user.companyId, user.role, id);
+  }
+}

@@ -1,7 +1,7 @@
 # Requirements Verification & Compliance Checklist
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Current Phase**: Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy  
+**Current Phase**: Phase 04 — Inventory Receipts Drafts & Management API  
 **Status**: 100% Verified & Passing
 
 ---
@@ -68,13 +68,35 @@
 
 ---
 
-## 4. Forward Phases Roadmap (Scope Enforcement)
+## 4. Phase 04: Inventory Receipts Drafts & Management API (Completed)
 
-| Phase                         | Description                                                            | Status in Phase 03  | Target Phase |
-| ----------------------------- | ---------------------------------------------------------------------- | ------------------- | ------------ |
-| **Core Costing Engine**       | Moving weighted-average cost calculation algorithm & standard fallback | **NOT IMPLEMENTED** | Phase 04     |
-| **GL Posting Engine**         | Automated double-entry journal creation and balance verification       | **NOT IMPLEMENTED** | Phase 04     |
-| **Receipt Workflow Services** | Atomic receipt posting within PostgreSQL ACID transaction              | **NOT IMPLEMENTED** | Phase 04     |
-| **Receipts REST Endpoints**   | Controllers, DTOs, and idempotency guards for `/api/v1/receipts`       | **NOT IMPLEMENTED** | Phase 05     |
-| **Frontend UI Pages**         | Receipt entry forms, warehouse views, journal drill-downs              | **NOT IMPLEMENTED** | Phase 06     |
-| **Financial Reconciliation**  | End-to-end integration tests & financial audit trial                   | **NOT IMPLEMENTED** | Phase 07     |
+| Requirement                     | Implementation Details                                                                                                                                           | Status   | Verification Evidence                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------- |
+| **Draft Creation Endpoint**     | `POST /api/v1/receipts` creates draft with 1+ lines, server-calculated totals, auto/custom receipt number                                                        | **PASS** | Verified in `receipts.service.spec.ts` and `receipts.e2e-spec.ts`             |
+| **List Receipts & Pagination**  | `GET /api/v1/receipts` with `page`, `limit`, `status`, `warehouseId`, `supplierId`, `startDate`, `endDate`, `search`, deterministic sorting, and pagination meta | **PASS** | Verified in `receipts.service.spec.ts` and `receipts.e2e-spec.ts`             |
+| **Get Receipt By ID**           | `GET /api/v1/receipts/:id` retrieves complete document, line items, item master attributes, warehouse, and supplier details                                      | **PASS** | Verified in `receipts.service.spec.ts` and `receipts.e2e-spec.ts`             |
+| **Update Draft Header**         | `PATCH /api/v1/receipts/:id` updates warehouse, supplier, receiptDate, receiptNumber, and notes on drafts only                                                   | **PASS** | Verified in `receipts.e2e-spec.ts`                                            |
+| **Atomic Lines Reconciliation** | `PUT/PATCH /api/v1/receipts/:id/lines` replaces/reconciles all lines atomically, re-indexes line numbers sequentially, and recalculates totals                   | **PASS** | Verified in `receipts.e2e-spec.ts`                                            |
+| **Dedicated Line Endpoints**    | `POST /:id/lines`, `PATCH /:id/lines/:lineId`, and `DELETE /:id/lines/:lineId` for fine-grained line mutations                                                   | **PASS** | Verified in `receipts.e2e-spec.ts`                                            |
+| **Draft Deletion Policy**       | `DELETE /api/v1/receipts/:id` cleanly cascades lines for DRAFT receipts; blocks deletion on POSTED/CANCELLED receipts with HTTP 409 Conflict                     | **PASS** | Verified in `receipts.e2e-spec.ts`                                            |
+| **Non-Draft Mutation Guard**    | Reject any update or deletion if receipt status is `POSTED` or `CANCELLED` (HTTP 400 / 409)                                                                      | **PASS** | Verified in `receipts.e2e-spec.ts` (tested with mocked POSTED receipt)        |
+| **Status Forgery Prevention**   | Clients cannot forge `status` (e.g. POSTED) or `companyId` via DTOs (`whitelist: true`, `forbidNonWhitelisted: true`)                                            | **PASS** | Verified in `receipts.e2e-spec.ts` (HTTP 400 rejected on status/companyId)    |
+| **Financial Decimal Precision** | `DecimalMath` handles calculations using `Prisma.Decimal` and `ROUND_HALF_UP` at 4 decimal places; tested with fractional quantities/costs, zero cost, and max   | **PASS** | `decimal-math.util.spec.ts` (12 tests) and `receipts.e2e-spec.ts`             |
+| **Strict Positive Quantities**  | `@IsPositiveDecimal()` rejects 0, negative, non-number strings                                                                                                   | **PASS** | Verified in validator unit specs and e2e payload rejects                      |
+| **Non-Negative Unit Costs**     | `@IsNonNegativeDecimal()` accepts 0 (samples/warranty), rejects negative values                                                                                  | **PASS** | Verified in validator unit specs and e2e payload rejects                      |
+| **Minimum 1 Line Policy**       | Reject receipt creation or updates with 0 lines; reject deleting the only remaining line item                                                                    | **PASS** | Verified in e2e tests (HTTP 400 on empty lines array & last line removal)     |
+| **Tenant Isolation & IDOR**     | Company 1 user cannot read, update, or delete Company 2 receipts (HTTP 403 Forbidden); related entities must belong to user company                              | **PASS** | Verified in `receipts.e2e-spec.ts` (cross-tenant warehouse/item/receipt test) |
+| **Transactional Atomicity**     | `$transaction` guarantees receipt + lines creation or line reconciliation roll back completely on validation failure                                             | **PASS** | Verified via rollback checks and atomicity tests                              |
+| **Strict Boundaries Preserved** | Zero stock movements, stock balance mutations, costing, GL postings, or UI created in this phase                                                                 | **PASS** | Audited codebase and Git status                                               |
+
+---
+
+## 5. Forward Phases Roadmap (Scope Enforcement)
+
+| Phase                        | Description                                                            | Status in Phase 04  | Target Phase |
+| ---------------------------- | ---------------------------------------------------------------------- | ------------------- | ------------ |
+| **Core Costing Engine**      | Moving weighted-average cost calculation algorithm & standard fallback | **NOT IMPLEMENTED** | Phase 05     |
+| **GL Posting Engine**        | Automated double-entry journal creation and balance verification       | **NOT IMPLEMENTED** | Phase 05     |
+| **Receipt Posting Workflow** | Atomic state transition (`DRAFT` $\to$ `POSTED`), ledger updates       | **NOT IMPLEMENTED** | Phase 05     |
+| **Frontend UI Pages**        | Receipt entry forms, warehouse views, journal drill-downs              | **NOT IMPLEMENTED** | Phase 06     |
+| **Financial Reconciliation** | End-to-end integration tests & financial audit trial                   | **NOT IMPLEMENTED** | Phase 07     |

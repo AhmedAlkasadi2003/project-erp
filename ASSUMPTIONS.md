@@ -4,7 +4,7 @@ This document records the confirmed assumptions, resolved technical decisions, a
 
 ---
 
-## 1. Confirmed Architectural Decisions (Phases 01, 02 & 03)
+## 1. Confirmed Architectural Decisions (Phases 01, 02, 03 & 04)
 
 1. **Monorepo Architecture**:
    - The system is organized as a modular monorepo managed with `pnpm` workspaces (`backend` and `frontend`).
@@ -21,6 +21,7 @@ This document records the confirmed assumptions, resolved technical decisions, a
    - Unit costs (`unitCost`, `averageCost`, `standardCost`) are typed as **`DECIMAL(19, 4)`** to prevent fractional rounding drift during moving average calculations.
    - Quantities (`quantityReceived`, `quantityOnHand`, `quantity`) are typed as **`DECIMAL(18, 4)`** to support fractional units of measure (e.g. KG, Liters, Meters).
    - Floating-point arithmetic (`FLOAT`/`DOUBLE PRECISION`) is strictly forbidden.
+   - Server calculation is enforced via `DecimalMath` using `Prisma.Decimal` and `ROUND_HALF_UP` to 4 decimal places.
 
 4. **Multi-Tenancy & Referential Integrity**:
    - `companyId` is mandatory across all domain records.
@@ -42,32 +43,35 @@ This document records the confirmed assumptions, resolved technical decisions, a
    - **Multi-Tenant Guarding**: `CompanyAccessGuard` strictly enforces that routes requesting resources under `/api/v1/companies/:companyId/...` match `req.user.companyId` unless the user carries `SUPER_ADMIN` privileges.
    - **HTTP Hardening**: Helmet middleware sets HTTP security headers; correlation IDs (`X-Correlation-ID`) are injected/propagated on all requests.
 
-6. **Accounting & Costing Model**:
-   - Double-entry balance rule is non-negotiable:
-     $$\sum \text{Debit} = \sum \text{Credit}$$
-   - Inventory receipts operate in a perpetual inventory model:
-     - **Debit**: Inventory Asset Account (`1200`)
-     - **Credit**: Inventory Received Not Invoiced Accrual (`2100`)
-   - Stock movements are strictly append-only in `StockMovement`.
-   - Optimistic concurrency control is enabled on `StockBalance` and `Receipt` via an integer `version` field.
+6. **Receipt Draft Management & Business Rules (Phase 04)**:
+   - Newly created receipts always start in `DRAFT` status.
+   - A receipt must contain at least 1 line item upon creation and during line updates. Deletion of the last remaining line is blocked.
+   - Line numbers are maintained sequentially ($1, 2, \dots, n$) without gaps.
+   - Quantities must be strictly positive ($>0$).
+   - Unit costs must be non-negative ($\ge 0$). Zero cost is supported for samples or warranty replacements.
+   - All referenced entities (warehouse, supplier, line items) must belong to the authenticated company and be active.
+   - Non-draft receipts (`POSTED`, `CANCELLED`) cannot be modified or deleted.
+   - Draft receipts can be deleted, cascading line items cleanly in PostgreSQL.
+   - Status transitions to `POSTED` or `CANCELLED` cannot be forged through draft management endpoints.
+   - Atomic line reconciliation is supported via `PUT/PATCH /api/v1/receipts/:id/lines`.
 
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item          | Impact on Phase 04       | Architectural Recommendation                                                                                                                                                    |
+| #      | Question / Requirement Item          | Impact on Phase 05       | Architectural Recommendation                                                                                                                                                    |
 | ------ | ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Costing Method Priority**          | Phase 04 Costing Engine  | Focus primarily on **Moving Weighted Average** as the core active calculation algorithm, with a clean interface for **Standard Cost** fallback and future FIFO layer expansion. |
-| **Q2** | **Zero / Negative Stock Handling**   | Phase 04 Stock Ledger    | Inventory receipts always increment stock ($\ge 0$). In the event an item has zero current on-hand quantity, the new unit cost is set directly to the received unit cost.       |
-| **Q3** | **Landed Cost Distribution**         | Phase 04 & 05            | In Phase 04, support direct unit cost per receipt line. Advanced proportional freight allocation can be added as a secondary service.                                           |
-| **Q4** | **Reversal & Cancellation Workflow** | Phase 04 Posting Service | A posted receipt cannot be deleted. Cancellation must create an offsetting reversing receipt and matching reversing journal entry.                                              |
+| **Q1** | **Costing Method Priority**          | Phase 05 Costing Engine  | Focus primarily on **Moving Weighted Average** as the core active calculation algorithm, with a clean interface for **Standard Cost** fallback and future FIFO layer expansion. |
+| **Q2** | **Zero / Negative Stock Handling**   | Phase 05 Stock Ledger    | Inventory receipts always increment stock ($\ge 0$). In the event an item has zero current on-hand quantity, the new unit cost is set directly to the received unit cost.       |
+| **Q3** | **Landed Cost Distribution**         | Phase 05                 | In Phase 05, support direct unit cost per receipt line. Advanced proportional freight allocation can be added as a secondary service.                                           |
+| **Q4** | **Reversal & Cancellation Workflow** | Phase 05 Posting Service | A posted receipt cannot be deleted. Cancellation must create an offsetting reversing receipt and matching reversing journal entry.                                              |
 
 ---
 
 ## 3. Decisions Deferred to Later Phases
 
-1. **Receipts REST Controllers & DTOs**:
-   - `POST /api/v1/receipts` and posting triggers are deferred to Phase 05.
+1. **Receipts Posting Endpoint**:
+   - `POST /api/v1/receipts/:id/post` is deferred to Phase 05.
 2. **Frontend UI Pages**:
    - Warehouse receipt entry, postings modal, and accounting inquiry views are deferred to Phase 06.
 3. **Advanced Reporting UI**:

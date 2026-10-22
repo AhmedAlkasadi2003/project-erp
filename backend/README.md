@@ -4,7 +4,7 @@
 
 The `backend` workspace provides the server-side API foundation for the **Inventory Receipts with Costing and GL Posting** system. It is built with **NestJS 11**, **TypeScript (Strict Mode)**, and **Prisma ORM 6** connecting to **PostgreSQL 16**.
 
-> **Phase 03 Notice**: The backend currently implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, and multi-tenant isolation guarding. Domain costing engines and receipt transaction posting workflows are scheduled for Phase 04.
+> **Phase 04 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, and complete draft receipts management API (`POST /receipts`, `GET /receipts`, `GET /receipts/:id`, `PATCH /receipts/:id`, `PUT /receipts/:id/lines`, line management endpoints, and deletion guards). Stock ledger updates and GL posting will be implemented in Phase 05.
 
 ---
 
@@ -16,7 +16,7 @@ The `backend` workspace provides the server-side API foundation for the **Invent
 - **ORM**: Prisma 6.19+
 - **Security & Cryptography**: `@node-rs/argon2`, `@nestjs/jwt`, `@nestjs/passport`, `passport-jwt`, `helmet`
 - **Validation**: `class-validator` & `class-transformer`
-- **Testing**: Jest 29 & Supertest (unit and e2e against real database)
+- **Testing**: Jest 29 & Supertest (unit and e2e against real PostgreSQL database)
 - **Linting & Formatting**: ESLint 9 (flat config) & Prettier
 
 ---
@@ -50,6 +50,13 @@ backend/
 │   │   ├── companies.controller.ts # Guarded tenant endpoints
 │   │   ├── companies.module.ts
 │   │   └── companies.service.ts    # Tenant-scoped queries
+│   ├── receipts/               # Inventory Receipts Draft Management (Phase 04)
+│   │   ├── dto/                # Create, Update, ReplaceLines, and Query DTOs
+│   │   ├── utils/              # DecimalMath utility and custom decimal validators
+│   │   ├── receipts.controller.ts
+│   │   ├── receipts.module.ts
+│   │   ├── receipts.service.ts # Transactional draft management & line reconciliation
+│   │   └── receipts.service.spec.ts
 │   ├── config/
 │   │   └── env.validation.ts   # Strict environment schema and validator
 │   ├── health/
@@ -65,6 +72,7 @@ backend/
 ├── test/
 │   ├── app.e2e-spec.ts         # Health check E2E suite
 │   ├── auth-and-multi-tenancy.e2e-spec.ts # Full security & tenant boundary E2E suite
+│   ├── receipts.e2e-spec.ts    # Full draft lifecycle, validation, and precision E2E suite
 │   └── jest-e2e.json           # Jest E2E test runner configuration
 ├── .env.example                # Example environment variables
 ├── .gitignore                  # Backend-specific ignore rules

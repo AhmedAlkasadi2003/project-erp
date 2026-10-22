@@ -355,8 +355,84 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
+
+  const supplier2 = await prisma.supplier.upsert({
+    where: {
+      companyId_code: {
+        companyId: company2.id,
+        code: 'SUP-BETA-01',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      code: 'SUP-BETA-01',
+      name: 'Beta Global Components Inc',
+      taxId: 'US-TAX-9988112',
+      contactEmail: 'sales@betaglobal.com',
+      paymentTerms: 'Net 60',
+      isActive: true,
+    },
+  });
+
+  const account2Asset = await prisma.account.upsert({
+    where: {
+      companyId_code: {
+        companyId: company2.id,
+        code: '1200',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      code: '1200',
+      name: 'Inventory - Raw Materials',
+      type: AccountType.ASSET,
+      normalBalance: AccountNormalBalance.DEBIT,
+      description: 'Asset account for Beta Corp inventory',
+    },
+  });
+
+  const account2Cogs = await prisma.account.upsert({
+    where: {
+      companyId_code: {
+        companyId: company2.id,
+        code: '5000',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      code: '5000',
+      name: 'Cost of Goods Sold (COGS)',
+      type: AccountType.EXPENSE,
+      normalBalance: AccountNormalBalance.DEBIT,
+      description: 'COGS account for Beta Corp',
+    },
+  });
+
+  const itemBeta = await prisma.item.upsert({
+    where: {
+      companyId_sku: {
+        companyId: company2.id,
+        sku: 'SKU-BETA-COMP',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      sku: 'SKU-BETA-COMP',
+      name: 'Beta High-Precision Sensor',
+      uom: 'PCS',
+      valuationMethod: ValuationMethod.MOVING_AVERAGE,
+      assetAccountId: account2Asset.id,
+      cogsAccountId: account2Cogs.id,
+      isActive: true,
+    },
+  });
+
   console.log(
-    `✓ Company 2 seeded for multi-tenancy verification: ${company2.name} (${company2.code})`,
+    `✓ Company 2 seeded for multi-tenancy verification: ${company2.name} (${company2.code}) with warehouse ${warehouse2.code}, supplier ${supplier2.code}, and item ${itemBeta.sku}`,
   );
 
   console.log('✅ Development database seed completed successfully.');

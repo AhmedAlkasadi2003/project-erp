@@ -10,15 +10,16 @@ This document outlines the phased development roadmap for the **Inventory Receip
 flowchart LR
   P1[Phase 01: Workspace Setup] --> P2[Phase 02: Database & Data Model]
   P2 --> P3[Phase 03: Security & Multi-Tenancy]
-  P3 --> P4[Phase 04: Domain Costing & Posting Engine]
-  P4 --> P5[Phase 05: Receipts REST API & Validation]
+  P3 --> P4[Phase 04: Receipts Drafts API]
+  P4 --> P5[Phase 05: Costing & GL Posting Engine]
   P5 --> P6[Phase 06: Frontend UI & Workflows]
   P6 --> P7[Phase 07: Integration & Reconciliation]
 
   style P1 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P3 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
-  style P4 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
+  style P4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P5 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
 ```
 
 ---
@@ -70,7 +71,26 @@ flowchart LR
 
 ---
 
-## Phase 04: Core Domain Services & Costing Engine (NEXT PHASE)
+## Phase 04: Inventory Receipts Drafts & Management API (COMPLETED)
+
+- **Objective**: Implement complete backend API for creating, reading, listing, updating, and managing draft inventory receipts and lines.
+- **Implemented Features**:
+  - **Draft Receipt Creation**: `POST /api/v1/receipts` creating header and 1+ lines atomically in a database transaction (`$transaction`), server-calculated totals, auto-generated or custom validated receipt number.
+  - **List Receipts & Pagination**: `GET /api/v1/receipts` supporting `page`, `limit`, `status`, `warehouseId`, `supplierId`, `startDate`, `endDate`, `search`, deterministic tie-breaker sorting, and pagination metadata.
+  - **Get Receipt by ID**: `GET /api/v1/receipts/:id` retrieving full document, sequential lines, item master details, and relation summaries.
+  - **Update Draft Header**: `PATCH /api/v1/receipts/:id` updating warehouse, supplier, date, receipt number, notes on draft receipts only.
+  - **Atomic Lines Reconciliation**: `PUT/PATCH /api/v1/receipts/:id/lines` replacing/reconciling all lines atomically, re-indexing lines sequentially, and recalculating totals.
+  - **Fine-Grained Line Endpoints**: `POST /:id/lines`, `PATCH /:id/lines/:lineId`, and `DELETE /:id/lines/:lineId`.
+  - **Financial Decimal Precision**: Implemented `DecimalMath` using `Prisma.Decimal` and `ROUND_HALF_UP` to 4 decimal places for quantities, unit costs, and monetary lines.
+  - **Strict Validation Rules**: `@IsPositiveDecimal()` for quantities ($>0$), `@IsNonNegativeDecimal()` for unit costs ($\ge 0$), minimum 1 line requirement, no deletion of the only line.
+  - **Status & Ownership Invariants**: Updates and deletions prohibited for non-draft receipts (`POSTED`, `CANCELLED`); mass-assignment of status or company ownership blocked.
+  - **Multi-Tenant Security & IDOR Defense**: Strict company boundary validation across warehouse, supplier, items, and receipts (HTTP 403 on cross-tenant access).
+  - **Automated Test Coverage**: 6 unit test suites (49/49 passing) and 3 real PostgreSQL E2E test suites (37/37 passing).
+- **Exit Status**: 100% verified against live PostgreSQL container. Zero costing or GL posting logic leaked into this phase.
+
+---
+
+## Phase 05: Core Domain Services, Costing & GL Posting Engine (NEXT PHASE)
 
 - **Objective**: Implement pure domain business logic, costing algorithms, and financial posting services isolated from transport controllers.
 - **Key Domain Services to Implement**:
@@ -87,18 +107,6 @@ flowchart LR
     - Orchestrates atomic state transition (`DRAFT` $\to$ `POSTED`) inside a PostgreSQL ACID transaction.
     - Atomically updates `StockBalance`, writes `StockMovement` records, generates `JournalEntry`, and updates `Receipt` status.
     - Enforces idempotency via `IdempotencyRecord`.
-
----
-
-## Phase 05: Backend REST API & Transactional Controller Layer
-
-- **Objective**: Expose authenticated, validated REST endpoints for receipts, inventory lookup, and ledger journal inquiries.
-- **Key Endpoints**:
-  - `POST /api/v1/receipts`: Create draft receipt with line item validation.
-  - `POST /api/v1/receipts/:id/post`: Atomic posting trigger executing costing calculation and GL journal generation.
-  - `GET /api/v1/receipts/:id`: Retrieve receipt details with associated journal entries.
-  - `GET /api/v1/accounts`: Chart of accounts inquiry.
-  - `GET /api/v1/inventory/items`: Item catalogue with current valuation and on-hand quantities.
 
 ---
 

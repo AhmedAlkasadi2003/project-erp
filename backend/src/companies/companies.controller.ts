@@ -29,4 +29,9 @@ export class CompaniesController {
   async getCompanyItems(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.companiesService.getCompanyItems(companyId);
   }
+
+  @Get(':companyId/suppliers')
+  async getCompanySuppliers(@Param('companyId', ParseUUIDPipe) companyId: string) {
+    return this.companiesService.getCompanySuppliers(companyId);
+  }
 }

@@ -134,21 +134,28 @@ This document records the confirmed assumptions, resolved technical decisions, a
     - **Disjoint Outbox Processing**: Multiple concurrent workers process disjoint outbox event batches via `SKIP LOCKED` without processing collisions or duplicate emissions.
     - **Cross-Tenant IDOR Hardening**: Cross-tenant attempts to query, post, void, or audit entities belonging to other tenants are strictly rejected (`HTTP 403` or `HTTP 404`), preventing tenant data leakage.
 
+13. **Frontend Architecture, User Workflows & Localization Invariants (Phases 10 & 11)**:
+    - **Server-Authoritative Domain Logic**: Client performs live calculations and instant validation for optimal user feedback, but NestJS and PostgreSQL remain the absolute authoritative source of truth for stock quantities, valuation, and ledger balancing.
+    - **Session & Identity Management**: JWT access tokens are stored in `localStorage` (`inventory_erp_auth_token`), injected via `Bearer` authorization headers, and automatically purged upon receiving an `HTTP 401 Unauthorized` response.
+    - **Idempotency Key Invariant**: Receipt posting actions from the UI generate unique client-side idempotency keys (`Idempotency-Key` UUIDv4) ensuring network retries or repeated button submissions never result in duplicate accounting or inventory transactions.
+    - **Bilingual Localization & Bi-directional Layout**: Type-safe English and Arabic dictionaries provide comprehensive system coverage. Switching languages dynamically modifies `document.documentElement.dir` (`rtl` vs `ltr`) and `lang`. Layouts strictly utilize CSS logical properties (`margin-inline`, `padding-inline`, flex directions) to achieve robust bi-directional symmetry without hardcoded directional assumptions.
+    - **Accessibility Invariants (WCAG 2.2 AA)**: All inputs feature explicit label pairings and aria-describedby validation hints. Modal dialogs trap keyboard focus and restore focus on dismissal. Status updates and loading spinners feature screen reader announcements via `aria-live="polite"` and `role="status"`. Color contrasts across light and dark themes comply with WCAG 2.2 AA (minimum 4.5:1 for normal text).
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item                     | Impact on Next Phase      | Architectural Recommendation                                                                                                                            |
-| ------ | ----------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Frontend UI Receipt Workflow State Machine**  | Frontend UI               | Implement interactive state indicators: Draft, Posted, Voided, with modal confirmation displaying preview of expected debits, credits, and balances.    |
-| **Q2** | **Landed Cost Allocation**                      | Future Enhancements       | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and clearing accounts. |
-| **Q3** | **Sub-ledger to General Ledger Reconciliation** | Audit & Financial Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.  |
+| #      | Question / Requirement Item                     | Impact on Future Enhancements | Architectural Recommendation                                                                                                                            |
+| ------ | ----------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | **Landed Cost Allocation**                      | Future Enhancements           | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and clearing accounts. |
+| **Q2** | **Sub-ledger to General Ledger Reconciliation** | Audit & Financial Reports     | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.  |
+| **Q3** | **Batch / Lot & Serial Tracking**               | Inventory Traceability        | Extend `ReceiptLine` and `StockMovement` with lot/serial number tracking for pharmaceutical and food-grade supply chain compliance.                     |
 
 ---
 
-## 3. Decisions Deferred to Later Phases
+## 3. Decisions Deferred to Future Work
 
-1. **Frontend UI Pages & Interactive ERP Workflows**:
-   - Warehouse receipt entry UI, line reconciliation, receipt posting dialog with debit/credit preview, stock balance inquiry, voiding workflow with reason capture, and journal entry audit views.
-2. **Advanced Financial Reporting & Trial Balance**:
-   - Trial Balance, Balance Sheet, Income Statement, and GL-to-Subledger reconciliation reports.
+1. **Advanced Financial Reporting & Trial Balance**:
+   - Trial Balance, Balance Sheet, Income Statement, and GL-to-Subledger automated reconciliation reports.
+2. **Batch / Lot Traceability**:
+   - Tracking expiry dates, manufacturer lot numbers, and FIFO serial tracking on inventory receipts.

@@ -44,4 +44,11 @@ export class CompaniesService {
       orderBy: { sku: 'asc' },
     });
   }
+
+  async getCompanySuppliers(companyId: string) {
+    return this.prisma.supplier.findMany({
+      where: { companyId },
+      orderBy: { code: 'asc' },
+    });
+  }
 }

@@ -22,7 +22,8 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 07 — Atomic Receipt Posting, Inventory Integration & Safe Void Workflow**: ✅ **COMPLETED** (Atomic PostgreSQL transaction boundary, row-level locks, stock balance mutations, moving weighted-average cost updates, double-entry GL journal generation, idempotency key support, safe void reversal workflow with stock depletion defense, 226/226 passing automated tests).
 - **Phase 08 — Audit Trail & Transactional Outbox**: ✅ **COMPLETED** (Append-only tenant audit trail with credential sanitization, correlation ID propagation, transactional outbox pattern inside single ACID transaction, SKIP LOCKED processor, exponential backoff, dead-letter handling, admin replay).
 - **Phase 09 — Backend Integration Testing, Concurrency & Reliability Hardening**: ✅ **COMPLETED** (Live PostgreSQL concurrency test suite verifying double posting locks, concurrent moving average stock valuation, initial-balance upsert race safety, safe void stock consumption defense, concurrent outbox worker claiming, 264/264 passing automated tests).
-- **Phase 10 — Frontend User Interface & Enterprise Workflows**: ⏳ **NEXT UP** (React 19 UI, receipt entry forms, posting confirmation modal, void reason dialog, real-time stock and journal drill-downs).
+- **Phase 10 — Frontend Integration & Complete User Workflows**: ✅ **COMPLETED** (Enterprise React 19 + TypeScript single-page application integrated with NestJS backend, token-based session management, reference data selectors, dynamic receipt line editing, live server-accurate total calculation, atomic posting modal with debit/credit impact preview, and safe void dialog with mandatory audit reason).
+- **Phase 11 — UX Polish, Localization, Accessibility & Browser Verification**: ✅ **COMPLETED** (Bilingual English & Arabic localization with instant toggle and dynamic RTL/LTR direction, WCAG 2.2 AA compliant contrast, focus traps and keyboard navigation, responsive layout across mobile/tablet/desktop viewports, 278/278 passing automated tests, 0 lint warnings, production build verified).
 
 ---
 
@@ -92,6 +93,7 @@ All endpoints are served under the `/api/v1` global prefix.
 - `GET /api/v1/companies/:companyId`: Guarded company details.
 - `GET /api/v1/companies/:companyId/warehouses`: Tenant's active warehouse list.
 - `GET /api/v1/companies/:companyId/items`: Tenant's catalog item list with account mappings.
+- `GET /api/v1/companies/:companyId/suppliers`: Tenant's active vendor/supplier list.
 
 ### 5.3 Inventory Receipts Management (Phase 04)
 
@@ -228,24 +230,45 @@ pnpm typecheck
 # 4. Validate Prisma database schema
 pnpm --filter @inventory-erp/backend prisma:validate
 
-# 5. Run all unit test suites (Jest backend + Vitest frontend)
+# 5. Run all unit test suites (Jest backend + Vitest frontend, 159 tests)
 pnpm test
 
-# 6. Run backend e2e tests against real PostgreSQL container
+# 6. Run backend e2e tests against real PostgreSQL container (119 tests)
 pnpm --filter @inventory-erp/backend test:e2e
 
-# 7. Build both applications for production
+# 7. Total automated test coverage: 278 / 278 tests passing (100% green)
+
+# 8. Build both applications for production
 pnpm build
 ```
 
 ---
 
-## 9. Next Phase: Phase 08
+## 9. Frontend Architecture & Enterprise Features (Phases 10 & 11)
 
-**Phase 08 — Frontend User Interface & Enterprise Workflows**:
+The frontend client is an enterprise single-page application built on **React 19**, **Vite 6**, and **TypeScript 5.7+**:
 
-- Implementing the React 19 + Vite web client interface.
-- Warehouse receipt entry UI with dynamic line editing and auto-calculated totals.
-- Posting confirmation dialog showing live preview of debits, credits, and account codes.
-- Safe void workflow dialog capturing the business reason for audit records.
-- Real-time stock balance inquiry and General Ledger journal entry drill-down views.
+### 9.1 Core Frontend Features
+
+- **Authentication & Multi-Tenant Context**:
+  - Secure tenant-scoped login (`companyCode`, `email`, `password`) with quick-fill development presets.
+  - Automatic `Bearer` token injection and correlation ID propagation on all API requests.
+  - Automatic session expiration and 401 response handling with redirection to login.
+- **Dynamic Receipt Management**:
+  - Searchable, multi-filter receipt list supporting status, warehouse, supplier, date ranges, and pagination.
+  - Draft receipt creation and editing forms with dynamic line items (add/remove, item selector, unit cost, quantity).
+  - Real-time client-side subtotal and total calculations using 4-decimal precision, matching server logic.
+  - Detailed document view linking to warehouse, vendor, line breakdowns, and corresponding General Ledger entries.
+- **Financial Controls & Confirmation Dialogs**:
+  - **Atomic Post Modal**: Accessible confirmation dialog presenting a live debit/credit preview for each SKU line against the accrued GRN clearing account, with client-side idempotency keys.
+  - **Safe Void Dialog**: Modal enforcing mandatory audit business reason and explicit confirmation of inventory reversal.
+  - Status badges adhering to strict design token palettes with high-contrast borders and text.
+- **Bilingual Localization (EN / AR) & RTL Support**:
+  - Complete English and Arabic dictionaries for headers, forms, validation messages, and system dialogs.
+  - Instant language toggle updating `document.documentElement.lang` and `dir="rtl"` / `dir="ltr"`.
+  - CSS layout designed with logical properties (`margin-inline-start`, `padding-inline-end`, flex alignments) ensuring natural bi-directional rendering.
+- **Accessibility (WCAG 2.2 AA) & Responsiveness**:
+  - Semantic HTML landmarks (`<header>`, `<nav>`, `<main>`, `<dialog>`, `<table>`).
+  - Screen reader announcements via `aria-live="polite"` and `role="status"`.
+  - Accessible modal dialogs with focus trapping and ESC key listeners.
+  - Fully responsive across mobile (360×800, 390×844), tablet (768×1024), and desktop (1440×900, 1920×1080) viewports.

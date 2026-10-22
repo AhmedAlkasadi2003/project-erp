@@ -1,0 +1,26 @@
+{
+  "name": "inventory-receipts-erp-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Inventory Receipts with Costing and GL Posting - Monorepo Workspace",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "test": "pnpm --recursive run test",
+    "lint": "pnpm --recursive run lint",
+    "typecheck": "pnpm --recursive run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f postgres",
+    "dev:backend": "pnpm --filter @inventory-erp/backend start:dev",
+    "dev:frontend": "pnpm --filter @inventory-erp/frontend dev"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+pnpm-lock.yaml
+.pnpm-store/
+.git/
+pgdata/
+docker-data/
+backend/dist/
+frontend/dist/

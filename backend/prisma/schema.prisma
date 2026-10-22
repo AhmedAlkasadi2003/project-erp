@@ -1,0 +1,16 @@
+// ==============================================================================
+// Prisma Schema Configuration - Inventory Receipts ERP
+// ==============================================================================
+// Phase 01: Infrastructure only.
+// Domain entities (Inventory, Receipts, GL Accounts, Journal Entries)
+// are explicitly reserved for Phase 02 (Database Schema & Data Model).
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

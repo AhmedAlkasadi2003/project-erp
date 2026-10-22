@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inventory_erp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-erp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-erp_password_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-inventory_erp_dev}
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U $${POSTGRES_USER:-erp_user} -d $${POSTGRES_DB:-inventory_erp_dev}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - erp_network
+
+volumes:
+  postgres_data:
+    name: inventory_erp_postgres_data
+
+networks:
+  erp_network:
+    name: inventory_erp_network

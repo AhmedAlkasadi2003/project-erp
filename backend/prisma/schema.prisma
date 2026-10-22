@@ -92,15 +92,17 @@ enum OutboxStatus {
 // ==============================================================================
 
 model Company {
-  id              String   @id @default(uuid())
-  code            String   @unique
-  name            String
-  currency        String   @default("USD")
-  fiscalYearStart Int      @default(1) // Month number (1 = January)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  code                 String   @unique
+  name                 String
+  currency             String   @default("USD")
+  fiscalYearStart      Int      @default(1) // Month number (1 = January)
+  isActive             Boolean  @default(true)
+  grnClearingAccountId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
+  grnClearingAccount Account?           @relation("CompanyGrnClearingAccount", fields: [grnClearingAccountId], references: [id], onDelete: Restrict)
   users              User[]
   warehouses         Warehouse[]
   suppliers          Supplier[]
@@ -195,17 +197,22 @@ model Account {
   description   String?
   isActive      Boolean              @default(true)
   isReconciled  Boolean              @default(false)
+  parentId      String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  assetItems   Item[]        @relation("ItemAssetAccount")
-  cogsItems    Item[]        @relation("ItemCogsAccount")
-  expenseItems Item[]        @relation("ItemExpenseAccount")
-  journalLines JournalLine[]
+  company              Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  parent               Account?      @relation("AccountHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children             Account[]     @relation("AccountHierarchy")
+  assetItems           Item[]        @relation("ItemAssetAccount")
+  cogsItems            Item[]        @relation("ItemCogsAccount")
+  expenseItems         Item[]        @relation("ItemExpenseAccount")
+  journalLines         JournalLine[]
+  grnClearingCompanies Company[]     @relation("CompanyGrnClearingAccount")
 
   @@unique([companyId, code])
   @@index([companyId, type, isActive])
+  @@index([parentId])
   @@map("accounts")
 }
 

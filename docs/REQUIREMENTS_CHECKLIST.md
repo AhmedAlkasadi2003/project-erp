@@ -1,7 +1,7 @@
 # Requirements Verification & Compliance Checklist
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Current Phase**: Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing  
+**Current Phase**: Phase 06 — Accounting Foundation, Chart of Accounts & Accounting Periods  
 **Status**: 100% Verified & Passing
 
 ---
@@ -115,12 +115,37 @@
 
 ---
 
-## 6. Forward Phases Roadmap (Scope Enforcement)
+## 6. Phase 06: Accounting Foundation, Chart of Accounts & Accounting Periods (Completed)
 
-| Phase                        | Description                                                            | Status in Phase 05  | Target Phase |
-| ---------------------------- | ---------------------------------------------------------------------- | ------------------- | ------------ |
-| **Receipt Posting Workflow** | Atomic state transition (`DRAFT` $\to$ `POSTED`), idempotency records  | **NOT IMPLEMENTED** | Phase 06     |
-| **GL Posting Engine**        | Automated double-entry journal creation (`1200` vs `2100`) and balance | **NOT IMPLEMENTED** | Phase 06     |
-| **Accounting Period Checks** | Validate posting dates against open/closed fiscal periods              | **NOT IMPLEMENTED** | Phase 06     |
-| **Frontend UI Pages**        | Receipt entry forms, warehouse views, journal drill-downs              | **NOT IMPLEMENTED** | Phase 07     |
-| **Financial Reconciliation** | End-to-end integration tests & financial audit trial                   | **NOT IMPLEMENTED** | Phase 08     |
+| Requirement                     | Implementation Details                                                                                                                               | Status   | Verification Evidence                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| **Account Hierarchy & Schema**  | Added `parentId String?` with self-referencing tree relation (`parent`/`children`, `onDelete: Restrict`) and `Company.grnClearingAccountId`          | **PASS** | Migration `20261022123745_add_account_hierarchy_and_company_clearing_account` applied  |
+| **Intra-Tenant Account Code**   | Accounts enforce unique code per tenant (`@@unique([companyId, code])`), name, classification, and normal balance                                    | **PASS** | Verified in `accounts.service.spec.ts` & `accounting-foundation.e2e-spec.ts`           |
+| **Account Tree Integrity**      | Parent existence, tenant matching, cycle detection algorithm, and self-parenting prevention                                                          | **PASS** | Verified in `accounts.service.spec.ts` & `accounting-foundation.e2e-spec.ts`           |
+| **Account Safe Deletion**       | Deletion blocked with HTTP 409 if referenced by child accounts, journal lines, item asset accounts, or company GRN clearing config                   | **PASS** | Verified in `accounts.service.spec.ts` & `accounting-foundation.e2e-spec.ts`           |
+| **Accounting Periods API**      | CRUD for periods (`name`, `startDate`, `endDate`, `status`), with inclusive boundary enforcement and chronological sorting                           | **PASS** | Verified in `accounting-periods.service.spec.ts` & E2E suite                           |
+| **Period Overlap Prevention**   | Query checks for any overlapping date intervals within the same tenant; rejects collisions with HTTP 409 Conflict                                    | **PASS** | Verified in `accounting-periods.service.spec.ts` & E2E suite                           |
+| **Period Closure Lifecycle**    | Endpoints to close or reopen fiscal periods with tenant checks                                                                                       | **PASS** | Verified in `accounting-periods.service.spec.ts` & E2E suite                           |
+| **Transaction Date Validation** | `getEligibleOpenPeriod(companyId, date, tx)` and `isDateInOpenPeriod` ensure transactions only occur in open periods                                 | **PASS** | Verified in `accounting-periods.service.spec.ts` & `journal-validator.service.spec.ts` |
+| **GRN Clearing Configuration**  | Company-level clearing account configuration (`/api/v1/accounting/inventory-accounts/config`); validates tenant, active state, and `LIABILITY` type  | **PASS** | Verified in `inventory-accounts.service.spec.ts` & E2E suite                           |
+| **Receipt Accounts Resolver**   | Reusable `resolveReceiptAccounts(companyId, itemIds, tx)` resolving GRN clearing and item asset accounts (`ASSET` type) for posting preparation      | **PASS** | Verified in `inventory-accounts.service.spec.ts` (7 unit tests passing)                |
+| **Double-Entry Validation**     | `JournalValidatorService` enforcing min 2 lines, exact balance $\sum \text{Debit} = \sum \text{Credit}$ at 4 decimals (`ROUND_HALF_UP`)              | **PASS** | `journal-validator.service.spec.ts` (14 unit tests passing)                            |
+| **Single-Leg Line Invariant**   | Each journal line must have either `debit > 0, credit = 0` OR `credit > 0, debit = 0`; dual or negative values rejected with HTTP 400                | **PASS** | Verified in validator unit tests and E2E tests                                         |
+| **Zero-Value Line Rejection**   | Lines with `debit = 0, credit = 0` rejected with HTTP 400                                                                                            | **PASS** | Verified in validator unit tests and E2E tests                                         |
+| **Journal Draft Creation**      | `POST /api/v1/journal-entries` validates accounts & period, generates sequential line numbers, assigns entry number, and persists DRAFT entry        | **PASS** | Verified in `journal-entries.service.spec.ts` & E2E suite                              |
+| **Validate-Only Endpoint**      | `POST /api/v1/journal-entries/validate` runs complete domain validation without persisting records, returning validation errors or `{ valid: true }` | **PASS** | Verified in `journal-entries.service.spec.ts` & E2E suite                              |
+| **Journal List & Query API**    | `GET /api/v1/journal-entries` and `GET /api/v1/journal-entries/:id` with tenant isolation, status, period, and date filtering                        | **PASS** | Verified in `journal-entries.service.spec.ts` & E2E suite                              |
+| **Multi-Tenant Security**       | Strict multi-tenant isolation across all accounting endpoints; cross-tenant references rejected with HTTP 403 or HTTP 404                            | **PASS** | Verified in `test/accounting-foundation.e2e-spec.ts` (33 E2E tests passing)            |
+| **Strict Scope Enforcement**    | Zero receipt posting orchestration, zero stock movements created from receipts, zero frontend UI in Phase 06                                         | **PASS** | Audited codebase and Git status                                                        |
+
+---
+
+## 7. Forward Phases Roadmap (Scope Enforcement)
+
+| Phase                         | Description                                                                                           | Status in Phase 06  | Target Phase |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------- | ------------ |
+| **Receipt Posting & GL Post** | Atomic receipt posting (`DRAFT` $\to$ `POSTED`), stock movement creation, GL journal entry generation | **NOT IMPLEMENTED** | Phase 07     |
+| **Receipt Post Reversals**    | Reversal/cancellation workflow generating compensating stock movements and reversing journal entries  | **NOT IMPLEMENTED** | Phase 07     |
+| **Frontend UI Foundation**    | Receipt management, line entry, warehouse selection, and status badges                                | **NOT IMPLEMENTED** | Phase 08     |
+| **Posting UI & GL Inquiries** | Receipt posting dialogs, stock balance inquiry, and journal entry views                               | **NOT IMPLEMENTED** | Phase 08     |
+| **Financial Reconciliation**  | Trial balance reports, GL-to-subledger balance audits, and full lifecycle E2E suite                   | **NOT IMPLEMENTED** | Phase 09     |

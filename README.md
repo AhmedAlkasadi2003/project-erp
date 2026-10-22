@@ -18,7 +18,8 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy**: ✅ **COMPLETED** (Argon2id password hashing, JWT authentication, RBAC authorization, multi-tenant boundary guards, Helmet, correlation IDs, 100% passing unit & E2E tests).
 - **Phase 04 — Inventory Receipts Drafts & Management API**: ✅ **COMPLETED** (Complete backend API for creating, listing, retrieving, updating headers, reconciling lines, and deleting draft receipts, with server-side Decimal precision, status guards, and multi-tenant isolation).
 - **Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing**: ✅ **COMPLETED** (Moving weighted-average costing engine, PostgreSQL row-level concurrency locking, initial-balance race prevention, zero residual penny depletion, append-only stock movements, compensating reversals, balance queries and reconciliation API).
-- **Phase 06 — Receipt Posting Orchestration & General Ledger Posting**: ⏳ **NEXT UP** (Atomic receipt post transition `DRAFT` $\to$ `POSTED`, automated double-entry GL journal creation `1200` vs `2100`, accounting periods, idempotency keys).
+- **Phase 06 — Accounting Foundation, Chart of Accounts & Accounting Periods**: ✅ **COMPLETED** (Chart of Accounts with tree hierarchy, cycle detection, accounting periods with boundary/overlap validation, company GRN clearing configuration, double-entry validation engine, draft journal entry management, 202/202 passing automated tests).
+- **Phase 07 — Receipt Posting Orchestration & General Ledger Posting**: ⏳ **NEXT UP** (Atomic receipt post transition `DRAFT` $\to$ `POSTED`, automated double-entry GL journal creation `1200` vs `2100`, accounting periods, idempotency keys).
 
 ---
 
@@ -137,6 +138,25 @@ curl -X POST http://localhost:4000/api/v1/receipts \
 - `GET /api/v1/inventory/movements`: Query append-only stock movement ledger with pagination, type filter (`movementType`), warehouse filter, item filter, and date ranges.
 - `GET /api/v1/inventory/reconcile/:warehouseId/:itemId`: Real-time read-only audit comparing live materialized balance snapshot against total aggregated ledger movements. Returns `{ inSync: true/false, deltaQuantity, deltaTotalValue }`.
 
+### 5.5 Accounting & General Ledger (Phase 06)
+
+- `GET /api/v1/accounts`: List accounts with parent-child hierarchy, classification filter, and active status filter.
+- `POST /api/v1/accounts`: Create an account with unique code per tenant, parent hierarchy, classification, and normal balance.
+- `GET /api/v1/accounts/:id`: Get account details including child sub-accounts.
+- `PATCH /api/v1/accounts/:id`: Update account name, parent, or status with cycle detection.
+- `DELETE /api/v1/accounts/:id`: Safe account deletion (blocked if referenced by child accounts, journal lines, items, or company clearing config).
+- `GET /api/v1/accounting-periods`: List accounting periods with date filtering and status filters.
+- `POST /api/v1/accounting-periods`: Create an accounting period with date boundary validation and overlap prevention.
+- `PATCH /api/v1/accounting-periods/:id`: Update period name or date range.
+- `POST /api/v1/accounting-periods/:id/close`: Close an accounting period.
+- `POST /api/v1/accounting-periods/:id/reopen`: Reopen an accounting period.
+- `GET /api/v1/accounting/inventory-accounts/config`: Retrieve company GRN clearing account configuration.
+- `PATCH /api/v1/accounting/inventory-accounts/config`: Set company GRN clearing account (validates `LIABILITY` classification, active state, and tenant ownership).
+- `GET /api/v1/journal-entries`: List journal entries with period, status, and date filters.
+- `POST /api/v1/journal-entries`: Create a validated draft journal entry (validates accounts, active status, open period, line count $\ge 2$, single legs, and exact $\sum \text{Debit} = \sum \text{Credit}$).
+- `POST /api/v1/journal-entries/validate`: Pure validation endpoint testing double-entry balancing and business rules without persisting.
+- `GET /api/v1/journal-entries/:id`: Retrieve journal entry document with sequential lines.
+
 ---
 
 ## 6. Installation & Setup
@@ -207,11 +227,12 @@ pnpm build
 
 ---
 
-## 9. Next Phase: Phase 06
+## 9. Next Phase: Phase 07
 
-**Phase 06 — Receipt Posting Orchestration & General Ledger Posting**:
+**Phase 07 — Receipt Posting Orchestration & General Ledger Posting**:
 
-- Implementing `PostingEngineService` (generating balanced double-entry General Ledger debit/credit records).
-- Implementing `ReceiptPostingService` (atomic PostgreSQL ACID transaction updating stock, ledger, and status from `DRAFT` to `POSTED`).
+- Implementing `PostingEngineService` (generating balanced double-entry General Ledger debit/credit records: Item Asset Account Debit vs GRN Clearing Account Credit).
+- Implementing `ReceiptPostingService` (atomic PostgreSQL ACID transaction updating stock balances, movements, GL journal entry, and receipt status from `DRAFT` to `POSTED`).
 - Accounting period verification (verifying receipt date against active open fiscal period).
 - Idempotency protection via `IdempotencyRecord`.
+- Receipt cancellation and reversing entry workflow.

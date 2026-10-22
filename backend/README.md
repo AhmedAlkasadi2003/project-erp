@@ -4,7 +4,7 @@
 
 The `backend` workspace provides the server-side API foundation for the **Inventory Receipts with Costing and GL Posting** system. It is built with **NestJS 11**, **TypeScript (Strict Mode)**, and **Prisma ORM 6** connecting to **PostgreSQL 16**.
 
-> **Phase 05 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, complete draft receipts management API, and **inventory ledger & moving average costing engine** (`CostingEngineService`, `StockBalanceService`, `InventoryLedgerService`, `InventoryController`). Receipt posting orchestration and GL posting will be implemented in Phase 06.
+> **Phase 06 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, draft receipts management API, inventory ledger & moving average costing engine, and **accounting foundation** (`AccountsService`, `AccountingPeriodsService`, `InventoryAccountsService`, `JournalValidatorService`, `JournalEntriesService`). Receipt posting orchestration and automatic GL posting will be implemented in Phase 07.
 
 ---
 
@@ -32,6 +32,12 @@ backend/
 │   ├── schema.prisma           # Complete relational schema (17 models, 11 enums)
 │   └── seed.ts                 # Idempotent development seed (companies, users, accounts, items)
 ├── src/
+│   ├── accounting/             # Accounting Foundation & GL (Phase 06)
+│   │   ├── accounts/           # Chart of Accounts & tree hierarchy
+│   │   ├── inventory-accounts/ # Company GRN clearing config & item asset resolver
+│   │   ├── journal/            # Pure double-entry validation engine & drafts
+│   │   ├── periods/            # Accounting periods & boundary validation
+│   │   └── accounting.module.ts
 │   ├── auth/                   # Authentication & Session Module
 │   │   ├── dto/                # LoginDto with class-validator
 │   │   ├── interfaces/         # JwtPayload
@@ -86,6 +92,7 @@ backend/
 │   ├── auth-and-multi-tenancy.e2e-spec.ts # Full security & tenant boundary E2E suite
 │   ├── receipts.e2e-spec.ts    # Full draft lifecycle, validation, and precision E2E suite
 │   ├── inventory-ledger-and-costing.e2e-spec.ts # Ledger, concurrency lock, and costing E2E suite
+│   ├── accounting-foundation.e2e-spec.ts # Chart of accounts, periods, and journal E2E suite
 │   └── jest-e2e.json           # Jest E2E test runner configuration
 ├── .env.example                # Example environment variables
 ├── .gitignore                  # Backend-specific ignore rules

@@ -4,7 +4,7 @@ This document records the confirmed assumptions, resolved technical decisions, a
 
 ---
 
-## 1. Confirmed Architectural Decisions (Phases 01, 02, 03 & 04)
+## 1. Confirmed Architectural Decisions (Phases 01, 02, 03, 04, 05 & 06)
 
 1. **Monorepo Architecture**:
    - The system is organized as a modular monorepo managed with `pnpm` workspaces (`backend` and `frontend`).
@@ -74,24 +74,41 @@ This document records the confirmed assumptions, resolved technical decisions, a
    - **Immutability & Reversals**: `StockMovement` records are strictly append-only. Correction is achieved through linked compensating movements (`referenceType = 'STOCK_MOVEMENT_REVERSAL'`). Duplicate reversals of the same movement are blocked.
    - **Concurrency Control**: Concurrency is managed via explicit PostgreSQL row locking (`SELECT ... FOR UPDATE`) within Prisma transactions. To eliminate initial-balance race conditions, zero-balance rows are upserted via `INSERT ... ON CONFLICT DO NOTHING` prior to acquiring locks. Transient serialization/deadlock errors are retried with bounded exponential jittered backoff. Multi-row transactions order lock acquisitions deterministically by `itemId: asc`.
 
+8. **Accounting Foundation, Chart of Accounts & Period Rules (Phase 06)**:
+   - **Chart of Accounts Hierarchy**: Accounts support self-referencing tree structures via `parentId String?` (`parent` / `children` relations with `onDelete: Restrict`).
+   - **Account Tree Integrity**: Cycle detection algorithm prevents recursive parentage, and self-parenting (`id === parentId`) is explicitly rejected. Deletion is blocked (`HTTP 409`) if an account has child accounts, transaction lines, items referencing it as an asset account, or is configured as the company GRN clearing account.
+   - **Accounting Periods**: Enforce `startDate <= endDate` with inclusive calendar date boundaries. Overlapping periods within the same company are strictly prohibited (`HTTP 409`). Closed periods cannot be reopened if audit controls are violated. Transaction posting requires an active `OPEN` period covering the transaction date.
+   - **Inventory Accounts Mapping**:
+     - **GRN Clearing Account (Accrued Inventory)**: Configured at the company level via `Company.grnClearingAccountId`. Must belong to the same tenant, be active, and have type `LIABILITY`.
+     - **Inventory Asset Account**: Configured per SKU via `Item.assetAccountId`. Must belong to the same tenant, be active, and have type `ASSET`.
+     - Reusable resolver `resolveReceiptAccounts(companyId, itemIds, tx)` provides single-query resolution and validation of accounts for receipt posting workflows.
+   - **Pure Double-Entry Validation Engine (`JournalValidatorService`)**:
+     - Minimum 2 lines required per journal entry.
+     - Exact mathematical balance: $\sum \text{Debit} = \sum \text{Credit}$ evaluated using `Prisma.Decimal` with 4-decimal precision (`ROUND_HALF_UP`). Any imbalance is rejected with `HTTP 400 Unprocessable Entity`.
+     - Single-leg rule: each line must have either `debit > 0, credit = 0` OR `credit > 0, debit = 0`. Negative amounts and dual-sided lines are strictly disallowed.
+     - Zero-value lines (`debit = 0, credit = 0`) are rejected.
+     - All referenced accounts must belong to the same tenant and be active.
+     - Transaction date must fall within an open accounting period for the tenant.
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations
 
-| #      | Question / Requirement Item          | Impact on Phase 05       | Architectural Recommendation                                                                                                                                                    |
-| ------ | ------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Q1** | **Costing Method Priority**          | Phase 05 Costing Engine  | Focus primarily on **Moving Weighted Average** as the core active calculation algorithm, with a clean interface for **Standard Cost** fallback and future FIFO layer expansion. |
-| **Q2** | **Zero / Negative Stock Handling**   | Phase 05 Stock Ledger    | Inventory receipts always increment stock ($\ge 0$). In the event an item has zero current on-hand quantity, the new unit cost is set directly to the received unit cost.       |
-| **Q3** | **Landed Cost Distribution**         | Phase 05                 | In Phase 05, support direct unit cost per receipt line. Advanced proportional freight allocation can be added as a secondary service.                                           |
-| **Q4** | **Reversal & Cancellation Workflow** | Phase 05 Posting Service | A posted receipt cannot be deleted. Cancellation must create an offsetting reversing receipt and matching reversing journal entry.                                              |
+| #      | Question / Requirement Item                     | Impact on Phase 07          | Architectural Recommendation                                                                                                                                                       |
+| ------ | ----------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Q1** | **Receipt Posting Atomic Orchestration**        | Phase 07 Receipt Posting    | Wrap receipt status transition (`DRAFT -> POSTED`), inventory ledger movements, stock balance locks, and GL journal entry generation in a single atomic PostgreSQL transaction.    |
+| **Q2** | **Receipt Cancellation & Reversals**            | Phase 07 Posting Reversals  | A posted receipt cannot be deleted. Cancellation must atomically generate compensating stock movements and an offsetting reversing journal entry within an open accounting period. |
+| **Q3** | **Landed Cost Allocation**                      | Phase 07 Costing Engine     | Landed freight/customs costs can be prorated across receipt lines based on quantity or value, adjusting both inventory valuation and GRN clearing or freight absorption accounts.  |
+| **Q4** | **Sub-ledger to General Ledger Reconciliation** | Phase 07/08 Audit & Reports | Periodic integrity verification job comparing sum of `StockBalance.totalValue` per company against the General Ledger Inventory Asset account balance.                             |
 
 ---
 
 ## 3. Decisions Deferred to Later Phases
 
-1. **Receipts Posting Endpoint**:
-   - `POST /api/v1/receipts/:id/post` is deferred to Phase 05.
-2. **Frontend UI Pages**:
-   - Warehouse receipt entry, postings modal, and accounting inquiry views are deferred to Phase 06.
-3. **Advanced Reporting UI**:
-   - Balance sheets, trial balance exports, and analytics dashboard components are deferred to Phase 06/07.
+1. **Receipt Posting & GL Posting Workflow (Phase 07)**:
+   - Endpoint `POST /api/v1/receipts/:id/post` orchestrating stock movement creation, moving weighted average updates, and journal entry generation.
+   - Endpoint `POST /api/v1/receipts/:id/cancel` orchestrating reversals.
+2. **Frontend UI Pages (Phase 08)**:
+   - Warehouse receipt entry UI, line reconciliation, receipt posting dialogs, stock balance inquiry, and journal entry audit views.
+3. **Advanced Financial Reporting (Phase 09)**:
+   - Trial Balance, Balance Sheet, Income Statement, and GL-to-Subledger reconciliation reports.

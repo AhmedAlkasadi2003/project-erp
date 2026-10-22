@@ -291,4 +291,68 @@ The system provides an automated audit endpoint `GET /api/v1/inventory/reconcile
 - Compares these mathematical sums against the materialized `StockBalance` row.
 - Returns `{ inSync: boolean, deltaQuantity: string, deltaTotalValue: string, balanceSnapshot, calculatedLedger }`.
 - Enables automated financial integrity audits without locking ledger tables.
+
+---
+
+## 9. Phase 06 Accounting Foundation, Chart of Accounts & Accounting Periods
+
+### 9.1 Chart of Accounts & Tree Hierarchy
+
+The Chart of Accounts model supports hierarchical structures via a self-referencing relationship:
+- `Account.parentId String?` references `Account.id` (`parent` / `children` relations with `onDelete: Restrict`).
+- **Cycle Detection**: When updating an account's parent, the service traces the ancestor chain to ensure an account cannot become a descendant of itself, preventing infinite loops.
+- **Self-Parenting Prevention**: An account cannot set its own `id` as `parentId`.
+- **Referential Protection**: Deletion of an account is blocked (`HTTP 409 Conflict`) if it has:
+  1. Child sub-accounts.
+  2. Associated journal entry lines.
+  3. Linked items using it as an inventory asset account (`Item.assetAccountId`).
+  4. Company-level configuration using it as the GRN clearing account (`Company.grnClearingAccountId`).
+
+### 9.2 Accounting Periods & Transaction Windows
+
+Accounting periods partition financial transactions into discrete fiscal intervals (e.g. FY2026-M01):
+- **Inclusive Boundaries**: Transactions are valid if `period.startDate <= transactionDate <= period.endDate`.
+- **Tenant-Scoped Overlap Prevention**: No two periods within the same company may overlap. A query checks existing ranges:
+  $$\max(\text{start}_A, \text{start}_B) \le \min(\text{end}_A, \text{end}_B)$$
+  Any collision is rejected with `HTTP 409 Conflict`.
+- **Lifecycle Control**: Periods transition between `OPEN` and `CLOSED`.
+- **Posting Guard**: The helper `getEligibleOpenPeriod(companyId, date, tx)` looks up the open period covering a transaction date. If the period is closed, missing, or outside the date window, posting is rejected with `HTTP 400 Bad Request`.
+
+### 9.3 Inventory Accounts Resolution Architecture
+
+Preparing for receipt posting in Phase 07 requires unambiguous resolution of accounting destinations:
+1. **GRN Clearing Account (Accrued Liabilities)**:
+   - Configured via `Company.grnClearingAccountId`.
+   - Must belong to the same company, be active (`isActive = true`), and possess classification `LIABILITY`.
+2. **Inventory Asset Account**:
+   - Configured per SKU via `Item.assetAccountId`.
+   - Must belong to the same company, be active (`isActive = true`), and possess classification `ASSET`.
+3. **Reusable Resolver**:
+   - `resolveReceiptAccounts(companyId, itemIds, tx)` fetches both the company clearing account and all SKU asset accounts in an atomic, cached database operation, returning a strongly-typed map ready for double-entry journal creation.
+
+### 9.4 Pure Double-Entry Validation Engine (`JournalValidatorService`)
+
+The general ledger integrity engine enforces double-entry invariants before persisting any financial record:
+
+```mermaid
+flowchart TD
+    DraftEntry[Incoming Journal Entry] --> LineCountCheck{Lines >= 2?}
+    LineCountCheck -- No --> RejectCount[Reject HTTP 400: Min 2 Lines Required]
+    LineCountCheck -- Yes --> SingleLegCheck{Each Line Debit XOR Credit?}
+    SingleLegCheck -- No --> RejectLeg[Reject HTTP 400: Line Cannot Have Both Debit & Credit or Negative Amounts]
+    SingleLegCheck -- Yes --> NonZeroCheck{Any Line with 0 Debit and 0 Credit?}
+    NonZeroCheck -- Yes --> RejectZero[Reject HTTP 400: Line Amounts Must Be > 0]
+    NonZeroCheck -- No --> SumBalanceCheck{Sum Debit == Sum Credit?}
+    SumBalanceCheck -- No --> RejectImbalance[Reject HTTP 400: Journal Entry Unbalanced]
+    SumBalanceCheck -- Yes --> AccountStatusCheck{All Accounts Active & Same Tenant?}
+    AccountStatusCheck -- No --> RejectAccount[Reject HTTP 400/404: Account Inactive or Cross-Tenant]
+    AccountStatusCheck -- Yes --> PeriodCheck{Transaction Date in Open Period?}
+    PeriodCheck -- No --> RejectPeriod[Reject HTTP 400: No Open Accounting Period for Date]
+    PeriodCheck -- Yes --> ValidEntry[Entry Validated / Persisted]
+```
+
+- **Mathematical Invariant**:
+  $$\sum_{i=1}^{n} \text{Debit}_i = \sum_{i=1}^{n} \text{Credit}_i$$
+  Calculated with `Prisma.Decimal` using 4-decimal precision (`ROUND_HALF_UP`).
+- **Validation-Only Endpoint**: `POST /api/v1/journal-entries/validate` runs this entire pipeline without modifying database state, enabling interactive UI balance verification before submission.
 $$

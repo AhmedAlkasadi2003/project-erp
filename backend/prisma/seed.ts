@@ -151,6 +151,13 @@ async function main(): Promise<void> {
   // 6. Seed Core Chart of Accounts for Company 1
   const accountsData = [
     {
+      code: '1000',
+      name: 'Current Assets',
+      type: AccountType.ASSET,
+      normalBalance: AccountNormalBalance.DEBIT,
+      description: 'Parent asset group for operational and inventory assets',
+    },
+    {
       code: '1200',
       name: 'Inventory - Raw Materials',
       type: AccountType.ASSET,
@@ -210,7 +217,23 @@ async function main(): Promise<void> {
     });
     accounts[acc.code] = createdAccount.id;
   }
-  console.log(`✓ Chart of accounts seeded: ${accountsData.length} accounts`);
+
+  // Link Account 1200 to parent 1000 (hierarchical chart of accounts)
+  if (accounts['1000'] && accounts['1200']) {
+    await prisma.account.update({
+      where: { id: accounts['1200'] },
+      data: { parentId: accounts['1000'] },
+    });
+  }
+
+  // Configure Company 1 GRN Clearing Account (2100)
+  await prisma.company.update({
+    where: { id: company1.id },
+    data: { grnClearingAccountId: accounts['2100'] },
+  });
+  console.log(
+    `✓ Chart of accounts seeded: ${accountsData.length} accounts (GRN clearing configured)`,
+  );
 
   // 7. Seed Accounting Period for Company 1
   const currentYear = new Date().getFullYear();
@@ -408,6 +431,46 @@ async function main(): Promise<void> {
       type: AccountType.EXPENSE,
       normalBalance: AccountNormalBalance.DEBIT,
       description: 'COGS account for Beta Corp',
+    },
+  });
+
+  const account2Clearing = await prisma.account.upsert({
+    where: {
+      companyId_code: {
+        companyId: company2.id,
+        code: '2100',
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      code: '2100',
+      name: 'Inventory Received Not Invoiced (Accrual)',
+      type: AccountType.LIABILITY,
+      normalBalance: AccountNormalBalance.CREDIT,
+      description: 'GRN Clearing account for Beta Corp',
+    },
+  });
+
+  await prisma.company.update({
+    where: { id: company2.id },
+    data: { grnClearingAccountId: account2Clearing.id },
+  });
+
+  await prisma.accountingPeriod.upsert({
+    where: {
+      companyId_name: {
+        companyId: company2.id,
+        name: periodName,
+      },
+    },
+    update: {},
+    create: {
+      companyId: company2.id,
+      name: periodName,
+      startDate,
+      endDate,
+      status: PeriodStatus.OPEN,
     },
   });
 

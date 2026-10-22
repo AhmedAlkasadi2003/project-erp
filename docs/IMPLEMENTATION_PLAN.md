@@ -12,16 +12,18 @@ flowchart LR
   P2 --> P3[Phase 03: Security & Multi-Tenancy]
   P3 --> P4[Phase 04: Receipts Drafts API]
   P4 --> P5[Phase 05: Inventory Ledger & Costing Engine]
-  P5 --> P6[Phase 06: Posting Engine & GL Posting]
-  P6 --> P7[Phase 07: Frontend UI & Workflows]
-  P7 --> P8[Phase 08: Integration & Reconciliation]
+  P5 --> P6[Phase 06: Accounting Foundation & Chart of Accounts]
+  P6 --> P7[Phase 07: Posting Engine & GL Posting]
+  P7 --> P8[Phase 08: Frontend UI & Workflows]
+  P8 --> P9[Phase 09: Integration & Reconciliation]
 
   style P1 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P3 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P5 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
-  style P6 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
+  style P6 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P7 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
 ```
 
 ---
@@ -124,14 +126,52 @@ flowchart LR
 
 ---
 
-## Phase 06: Receipt Posting Orchestration & General Ledger Posting (NEXT PHASE)
+## Phase 06: Accounting Foundation, Chart of Accounts & Accounting Periods (COMPLETED)
+
+- **Objective**: Establish the accounting foundation, chart of accounts tree hierarchy, accounting period controls, inventory account configuration, and strict double-entry validation engine.
+- **Implemented Features**:
+  - **Prisma Schema Enhancements**:
+    - `Account.parentId String?` with self-referencing tree relation (`parent` / `children` with `onDelete: Restrict`).
+    - `Company.grnClearingAccountId String?` referencing `Account` (`onDelete: Restrict`).
+    - Migration `20261022123745_add_account_hierarchy_and_company_clearing_account` generated and applied.
+  - **Chart of Accounts Service & Controller** (`/api/v1/accounts`):
+    - Multi-tenant CRUD operations for accounts with unique code per tenant (`@@unique([companyId, code])`).
+    - Tree integrity validation: parent existence check, tenant boundary check, self-parenting prevention, cycle detection algorithm.
+    - Safe deletion rules: blocked with HTTP 409 if referenced by child accounts, journal lines, item asset accounts, or company clearing config.
+  - **Accounting Periods Service & Controller** (`/api/v1/accounting-periods`):
+    - Period creation and management with strict calendar boundaries (`startDate <= endDate`).
+    - Non-overlapping invariant: tenant-scoped overlap query blocks date range collisions with HTTP 409 Conflict.
+    - Period lifecycle: open/close state transitions.
+    - Reusable validation helpers: `getEligibleOpenPeriod(companyId, date, tx)` and `isDateInOpenPeriod`.
+  - **Inventory Accounts Service & Controller** (`/api/v1/accounting/inventory-accounts`):
+    - Company-level configuration for Goods Receipt Note (GRN) Clearing Account (`LIABILITY` classification, active, same tenant).
+    - Reusable resolver `resolveReceiptAccounts(companyId, itemIds, tx)` resolving GRN clearing and item asset accounts (`ASSET` classification) in preparation for receipt posting.
+  - **Pure Double-Entry Validation Engine** (`JournalValidatorService`):
+    - Enforces minimum 2 lines per journal entry.
+    - Exact mathematical balancing: $\sum \text{Debit} = \sum \text{Credit}$ calculated at 4 decimal places (`ROUND_HALF_UP`).
+    - Enforces single-leg lines: each line must have either `debit > 0, credit = 0` OR `credit > 0, debit = 0`.
+    - Zero-value lines (`debit = 0, credit = 0`) and negative values rejected with HTTP 400.
+    - Active account check and open period check.
+  - **Journal Entries Service & Controller** (`/api/v1/journal-entries`):
+    - Draft creation endpoint (`POST /api/v1/journal-entries`) persisting validated draft entries with sequential line numbering.
+    - Validate-only endpoint (`POST /api/v1/journal-entries/validate`) testing journal lines without database mutation.
+    - Retrieval and query endpoints with tenant isolation and date/period filters.
+  - **Automated Test Coverage**:
+    - 5 unit test suites (40 tests passing): `accounts.service.spec.ts` (10/10), `accounting-periods.service.spec.ts` (6/6), `inventory-accounts.service.spec.ts` (7/7), `journal-validator.service.spec.ts` (14/14), `journal-entries.service.spec.ts` (3/3).
+    - 1 new integration E2E suite: `test/accounting-foundation.e2e-spec.ts` (33/33 tests passing on live PostgreSQL container).
+    - Total codebase test count: **202 automated tests passing with 100% green**.
+- **Exit Status**: Fully verified in live PostgreSQL container; zero receipt posting orchestration or frontend UI leaked into this phase.
+
+---
+
+## Phase 07: Receipt Posting Orchestration & General Ledger Posting (NEXT PHASE)
 
 - **Objective**: Implement atomic receipt posting orchestration (`DRAFT` $\to$ `POSTED`), automated double-entry GL journal generation, accounting period controls, and idempotency protection.
 - **Key Deliverables to Implement**:
   - `PostingEngineService`:
     - Generates balanced double-entry General Ledger journal records:
-      - **Debit**: Item Inventory Asset Account (`1200`) for total line valuation.
-      - **Credit**: Inventory Received Not Invoiced Accrual (`2100`) for total receipt amount.
+      - **Debit**: Item Inventory Asset Account (`Item.assetAccountId`) for line valuation.
+      - **Credit**: GRN Clearing Account (`Company.grnClearingAccountId`) for total receipt amount.
     - Strict validation invariant: $\sum \text{Debit} = \sum \text{Credit}$ (throws domain error if variance $\neq 0$).
   - `ReceiptPostingService`:
     - Orchestrates atomic state transition (`DRAFT` $\to$ `POSTED`) inside a PostgreSQL ACID transaction.
@@ -141,10 +181,11 @@ flowchart LR
     - Verifies that `receiptDate` falls within an open accounting period (`AccountingPeriod.status === OPEN`).
   - Endpoints:
     - `POST /api/v1/receipts/:id/post`: Atomic post endpoint with idempotency key support.
+    - `POST /api/v1/receipts/:id/cancel`: Cancellation and reversing entry workflow.
 
 ---
 
-## Phase 06: Frontend User Interface & Enterprise Workflows
+## Phase 08: Frontend User Interface & Enterprise Workflows
 
 - **Objective**: Deliver a clean, professional React UI for warehouse clerks and accountants.
 - **Key Modules**:
@@ -155,7 +196,7 @@ flowchart LR
 
 ---
 
-## Phase 07: End-to-End Integration, Reconciliation & Verification
+## Phase 09: End-to-End Integration, Reconciliation & Verification
 
 - **Objective**: Validate the full operational cycle from receipt entry to financial statement impact.
 - **Verification Suites**:

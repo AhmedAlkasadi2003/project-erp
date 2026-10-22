@@ -55,6 +55,25 @@ This document records the confirmed assumptions, resolved technical decisions, a
    - Status transitions to `POSTED` or `CANCELLED` cannot be forged through draft management endpoints.
    - Atomic line reconciliation is supported via `PUT/PATCH /api/v1/receipts/:id/lines`.
 
+7. **Inventory Costing Policy, Stock Balances & Ledger Invariants (Phase 05)**:
+   - **Costing Valuation Model**: Moving Weighted-Average Costing per **`[companyId, warehouseId, itemId]`**. Each warehouse maintains distinct inventory balances and independent moving averages for each SKU.
+   - **Inbound Movement Valuation**:
+     $$\text{New Qty} = Q_{\text{prev}} + Q_{\text{in}}$$
+     $$\text{Incoming Value} = \text{round}_4(Q_{\text{in}} \times C_{\text{in}})$$
+     $$\text{New Value} = V_{\text{prev}} + \text{Incoming Value}$$
+     $$\text{New Avg Cost} = \begin{cases} C_{\text{in}}, & \text{if } Q_{\text{prev}} = 0 \\ \text{round}_4\left(\frac{\text{New Value}}{\text{New Qty}}\right), & \text{if } Q_{\text{prev}} > 0 \end{cases}$$
+   - **Zero-Cost Inbound Movements**: Supported for promotional samples or warranty intake. $C_{\text{in}} = 0$, incoming value = \$0, new total value remains $V_{\text{prev}}$, and unit cost is diluted: $\frac{V_{\text{prev}}}{Q_{\text{prev}} + Q_{\text{in}}}$.
+   - **Outbound Movement Valuation**: Always relieved at current moving average cost:
+     $$\text{Deducted Value} = \text{round}_4(Q_{\text{out}} \times C_{\text{current}})$$
+     $$\text{New Qty} = Q_{\text{prev}} - Q_{\text{out}}$$
+     $$\text{New Value} = V_{\text{prev}} - \text{Deducted Value}$$
+     $$\text{New Avg Cost} = C_{\text{current}}$$
+   - **Depletion to Zero Invariant**: When an outbound movement reduces quantity to exactly zero ($Q_{\text{out}} = Q_{\text{prev}}$), $\text{totalValue}$ and $\text{averageCost}$ are strictly set to $0$ to guarantee that zero stock never retains residual rounding drift on the balance sheet.
+   - **Negative Stock & Insufficient Stock Policy**: Negative stock is strictly forbidden. Outbound requests where $Q_{\text{out}} > Q_{\text{prev}}$ are immediately rejected with `InsufficientStockException` (`HTTP 400`).
+   - **Backdated Movements**: In a perpetual moving average system, movements are evaluated against the live balance at transaction commitment. Retroactive re-costing is not supported without complex ledger replay.
+   - **Immutability & Reversals**: `StockMovement` records are strictly append-only. Correction is achieved through linked compensating movements (`referenceType = 'STOCK_MOVEMENT_REVERSAL'`). Duplicate reversals of the same movement are blocked.
+   - **Concurrency Control**: Concurrency is managed via explicit PostgreSQL row locking (`SELECT ... FOR UPDATE`) within Prisma transactions. To eliminate initial-balance race conditions, zero-balance rows are upserted via `INSERT ... ON CONFLICT DO NOTHING` prior to acquiring locks. Transient serialization/deadlock errors are retried with bounded exponential jittered backoff. Multi-row transactions order lock acquisitions deterministically by `itemId: asc`.
+
 ---
 
 ## 2. Unresolved Questions & Technical Recommendations

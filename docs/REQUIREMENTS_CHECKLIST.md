@@ -1,7 +1,7 @@
 # Requirements Verification & Compliance Checklist
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Current Phase**: Phase 04 — Inventory Receipts Drafts & Management API  
+**Current Phase**: Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing  
 **Status**: 100% Verified & Passing
 
 ---
@@ -91,12 +91,36 @@
 
 ---
 
-## 5. Forward Phases Roadmap (Scope Enforcement)
+## 5. Phase 05: Inventory Ledger, Stock Balances & Weighted Average Costing (Completed)
 
-| Phase                        | Description                                                            | Status in Phase 04  | Target Phase |
+| Requirement                       | Implementation Details                                                                                                                                              | Status   | Verification Evidence                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| **Valuation Policy Specs**        | Moving weighted-average costing policy documented per `[companyId, warehouseId, itemId]` in `ASSUMPTIONS.md`                                                        | **PASS** | `ASSUMPTIONS.md` updated with exact rounding and edge case rules                     |
+| **Costing Engine**                | Pure domain service `CostingEngineService` implementing moving weighted average with `Prisma.Decimal` and `ROUND_HALF_UP` to 4 decimal places                       | **PASS** | `costing-engine.service.spec.ts` (10/10 tests passing)                               |
+| **Initial Intake / Zero Stock**   | Inbound intake on zero on-hand quantity directly assigns incoming unit cost without division by zero                                                                | **PASS** | Verified in unit and E2E tests                                                       |
+| **Zero-Cost Inbound Goods**       | Receipts at `0.0000` unit cost (e.g. promotional samples or warranty intake) dilute moving average unit cost correctly                                              | **PASS** | Verified in unit and E2E tests                                                       |
+| **Outbound Relieving Cost**       | Outbound issues strictly relieved at current moving average cost, reducing `totalValue` proportionally                                                              | **PASS** | Verified in unit and E2E tests                                                       |
+| **Depletion & Residual Drift**    | Full depletion ($Q_{\text{out}} = Q_{\text{onhand}}$) strictly resets `totalValue` and `averageCost` to `0.0000` to prevent residual penny drift                    | **PASS** | Verified in unit test `should zero out totalValue and averageCost on full depletion` |
+| **Negative Stock Prevention**     | Throws `InsufficientStockException` (HTTP 400 Bad Request) with structured payload if outgoing quantity exceeds available on-hand balance                           | **PASS** | `insufficient-stock.exception.ts` verified in unit and E2E tests                     |
+| **Atomic Balance Row Creation**   | PostgreSQL atomic `INSERT ... ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING` ensures row exists before row-lock, eliminating initial race condition | **PASS** | Verified in `test/inventory-ledger-and-costing.e2e-spec.ts` under parallel promises  |
+| **Row-Level Concurrency Lock**    | `SELECT ... FOR UPDATE` acquires exclusive row lock inside transaction, preventing lost updates and race condition drifts under concurrent writes                   | **PASS** | Verified in parallel stress test in `inventory-ledger-and-costing.e2e-spec.ts`       |
+| **Deadlock Prevention Ordering**  | Multiple items locked in deterministic order sorted by `itemId: 'asc'` to prevent circular wait deadlocks                                                           | **PASS** | Verified in multi-item transaction logic                                             |
+| **Append-Only Stock Ledger**      | Every intake or issue writes an immutable `StockMovement` recording quantities, unit cost, value, and balance snapshot (`quantityAfter`, `totalValueAfter`)         | **PASS** | Verified in `inventory-ledger.service.spec.ts` and E2E tests                         |
+| **Movement Reversal Workflow**    | `reverseMovement` writes a compensating movement (`STOCK_MOVEMENT_REVERSAL`), blocks duplicate reversals, and validates remaining stock on inbound reversals        | **PASS** | Verified in unit test and E2E test suite                                             |
+| **Transient Retry Wrapper**       | `withRetry` with bounded exponential backoff & jitter handles PostgreSQL serialization (`40001`), deadlock (`40P01`), and Prisma write conflict (`P2034`)           | **PASS** | Verified in `inventory-ledger.service.ts`                                            |
+| **Stock Balances Query API**      | `GET /api/v1/inventory/balances` with tenant filtering, pagination, sorting, search, warehouse, and item filters                                                    | **PASS** | Guarded by `JwtAuthGuard` & `RolesGuard`; verified in E2E tests                      |
+| **Balance Reconciliation API**    | `GET /api/v1/inventory/reconcile/:warehouseId/:itemId` read-only audit comparing live snapshot against ledger movement sums                                         | **PASS** | Returns `{ inSync, deltaQuantity, deltaTotalValue }`; verified in E2E tests          |
+| **Strict Multi-Tenant Isolation** | Cross-company balance and ledger queries strictly return HTTP 403 or empty sets; tenant boundaries fully enforced                                                   | **PASS** | Verified in `inventory-ledger-and-costing.e2e-spec.ts`                               |
+| **Boundary Preservation**         | Zero receipt posting orchestration (`DRAFT` $\to$ `POSTED`), zero General Ledger entries, and zero UI created in Phase 05                                           | **PASS** | Verified in Phase 04 draft isolation test and git inspection                         |
+
+---
+
+## 6. Forward Phases Roadmap (Scope Enforcement)
+
+| Phase                        | Description                                                            | Status in Phase 05  | Target Phase |
 | ---------------------------- | ---------------------------------------------------------------------- | ------------------- | ------------ |
-| **Core Costing Engine**      | Moving weighted-average cost calculation algorithm & standard fallback | **NOT IMPLEMENTED** | Phase 05     |
-| **GL Posting Engine**        | Automated double-entry journal creation and balance verification       | **NOT IMPLEMENTED** | Phase 05     |
-| **Receipt Posting Workflow** | Atomic state transition (`DRAFT` $\to$ `POSTED`), ledger updates       | **NOT IMPLEMENTED** | Phase 05     |
-| **Frontend UI Pages**        | Receipt entry forms, warehouse views, journal drill-downs              | **NOT IMPLEMENTED** | Phase 06     |
-| **Financial Reconciliation** | End-to-end integration tests & financial audit trial                   | **NOT IMPLEMENTED** | Phase 07     |
+| **Receipt Posting Workflow** | Atomic state transition (`DRAFT` $\to$ `POSTED`), idempotency records  | **NOT IMPLEMENTED** | Phase 06     |
+| **GL Posting Engine**        | Automated double-entry journal creation (`1200` vs `2100`) and balance | **NOT IMPLEMENTED** | Phase 06     |
+| **Accounting Period Checks** | Validate posting dates against open/closed fiscal periods              | **NOT IMPLEMENTED** | Phase 06     |
+| **Frontend UI Pages**        | Receipt entry forms, warehouse views, journal drill-downs              | **NOT IMPLEMENTED** | Phase 07     |
+| **Financial Reconciliation** | End-to-end integration tests & financial audit trial                   | **NOT IMPLEMENTED** | Phase 08     |

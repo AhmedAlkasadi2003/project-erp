@@ -11,15 +11,17 @@ flowchart LR
   P1[Phase 01: Workspace Setup] --> P2[Phase 02: Database & Data Model]
   P2 --> P3[Phase 03: Security & Multi-Tenancy]
   P3 --> P4[Phase 04: Receipts Drafts API]
-  P4 --> P5[Phase 05: Costing & GL Posting Engine]
-  P5 --> P6[Phase 06: Frontend UI & Workflows]
-  P6 --> P7[Phase 07: Integration & Reconciliation]
+  P4 --> P5[Phase 05: Inventory Ledger & Costing Engine]
+  P5 --> P6[Phase 06: Posting Engine & GL Posting]
+  P6 --> P7[Phase 07: Frontend UI & Workflows]
+  P7 --> P8[Phase 08: Integration & Reconciliation]
 
   style P1 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P3 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
   style P4 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
-  style P5 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
+  style P5 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+  style P6 fill:#e0f2fe,stroke:#0284c7,stroke-width:2px
 ```
 
 ---
@@ -90,14 +92,42 @@ flowchart LR
 
 ---
 
-## Phase 05: Core Domain Services, Costing & GL Posting Engine (NEXT PHASE)
+## Phase 05: Inventory Ledger, Stock Balances & Weighted Average Costing (COMPLETED)
 
-- **Objective**: Implement pure domain business logic, costing algorithms, and financial posting services isolated from transport controllers.
-- **Key Domain Services to Implement**:
+- **Objective**: Implement pure domain business logic, moving weighted-average costing engine, concurrency-safe stock balance mutations, and append-only inventory ledger.
+- **Implemented Features**:
   - `CostingEngineService`:
-    - Moving Weighted-Average calculation formula:
-      $$\text{New Average Cost} = \frac{(\text{Current Qty} \times \text{Current Avg Cost}) + (\text{Received Qty} \times \text{Received Unit Cost})}{\text{Current Qty} + \text{Received Qty}}$$
-    - Handling zero on-hand quantity division and standard cost fallback.
+    - Pure domain service calculating inbound moving weighted-average costs with `Prisma.Decimal` and `ROUND_HALF_UP` to 4 decimal places.
+    - Zero-stock / initial intake assigns incoming unit cost directly without division-by-zero.
+    - Inbound receipts at `0.0000` unit cost dilute moving average cost correctly.
+    - Outbound stock issues relieved strictly at current moving average cost.
+    - Zero residual penny invariant: full stock depletion ($Q_{\text{out}} = Q_{\text{onhand}}$) strictly resets `totalValue` and `averageCost` to `0.0000`.
+  - `StockBalanceService`:
+    - PostgreSQL atomic upsert `INSERT ... ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING` eliminates initial-balance race condition.
+    - Explicit row-level lock `SELECT ... FOR UPDATE` prevents lost updates and concurrency anomalies.
+    - Read-only balance reconciliation audit comparing balance snapshot against aggregated ledger movements (`reconcileBalance`).
+  - `InventoryLedgerService`:
+    - Append-only transactional ledger recording all movements (`StockMovement`) with balance snapshot (`quantityAfter`, `totalValueAfter`).
+    - Negative stock prevention via `InsufficientStockException` (HTTP 400 Bad Request).
+    - Compensating movement reversal workflow (`reverseMovement`) with duplicate prevention.
+    - Concurrency retry wrapper (`withRetry`) with bounded exponential backoff and jitter for transient serialization (`40001`), deadlock (`40P01`), and write conflict (`P2034`) errors.
+    - Deterministic multi-row lock ordering by `itemId: 'asc'` to prevent circular wait deadlocks.
+  - `InventoryController`:
+    - `GET /api/v1/inventory/balances` with pagination, sorting, search, warehouse, and item filters.
+    - `GET /api/v1/inventory/balances/:warehouseId/:itemId` single balance lookup.
+    - `GET /api/v1/inventory/movements` queryable audit log with date ranges and movement types.
+    - `GET /api/v1/inventory/reconcile/:warehouseId/:itemId` read-only synchronization verification.
+  - **Automated Test Coverage**:
+    - 3 new unit test suites: `costing-engine.service.spec.ts` (10/10), `stock-balance.service.spec.ts` (5/5), `inventory-ledger.service.spec.ts` (7/7).
+    - 1 new integration E2E suite: `test/inventory-ledger-and-costing.e2e-spec.ts` (15/15 tests passing on real PostgreSQL container, including concurrent parallel race tests).
+- **Exit Status**: 100% verified against live PostgreSQL container. Zero GL postings or receipt post transitions leaked into this phase.
+
+---
+
+## Phase 06: Receipt Posting Orchestration & General Ledger Posting (NEXT PHASE)
+
+- **Objective**: Implement atomic receipt posting orchestration (`DRAFT` $\to$ `POSTED`), automated double-entry GL journal generation, accounting period controls, and idempotency protection.
+- **Key Deliverables to Implement**:
   - `PostingEngineService`:
     - Generates balanced double-entry General Ledger journal records:
       - **Debit**: Item Inventory Asset Account (`1200`) for total line valuation.
@@ -107,6 +137,10 @@ flowchart LR
     - Orchestrates atomic state transition (`DRAFT` $\to$ `POSTED`) inside a PostgreSQL ACID transaction.
     - Atomically updates `StockBalance`, writes `StockMovement` records, generates `JournalEntry`, and updates `Receipt` status.
     - Enforces idempotency via `IdempotencyRecord`.
+  - Accounting Period Verification:
+    - Verifies that `receiptDate` falls within an open accounting period (`AccountingPeriod.status === OPEN`).
+  - Endpoints:
+    - `POST /api/v1/receipts/:id/post`: Atomic post endpoint with idempotency key support.
 
 ---
 

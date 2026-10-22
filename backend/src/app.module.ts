@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { CompaniesModule } from './companies/companies.module';
 import { ReceiptsModule } from './receipts/receipts.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
 @Module({
@@ -19,6 +20,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     AuthModule,
     CompaniesModule,
     ReceiptsModule,
+    InventoryModule,
   ],
 })
 export class AppModule implements NestModule {

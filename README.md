@@ -17,7 +17,8 @@ An enterprise-grade ERP system for handling **Inventory Receipts**, calculating 
 - **Phase 02 — Database Foundation & Prisma**: ✅ **COMPLETED** (PostgreSQL 16 relational data model, Prisma ORM 6, migrations, deterministic seed, strict Decimal precision).
 - **Phase 03 — Senior Backend Engineering, Security & Multi-Tenancy**: ✅ **COMPLETED** (Argon2id password hashing, JWT authentication, RBAC authorization, multi-tenant boundary guards, Helmet, correlation IDs, 100% passing unit & E2E tests).
 - **Phase 04 — Inventory Receipts Drafts & Management API**: ✅ **COMPLETED** (Complete backend API for creating, listing, retrieving, updating headers, reconciling lines, and deleting draft receipts, with server-side Decimal precision, status guards, and multi-tenant isolation).
-- **Phase 05 — Core Domain Services & Costing Engine**: ⏳ **NEXT UP** (Moving average costing calculation, double-entry GL posting rules, atomic state transitions).
+- **Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing**: ✅ **COMPLETED** (Moving weighted-average costing engine, PostgreSQL row-level concurrency locking, initial-balance race prevention, zero residual penny depletion, append-only stock movements, compensating reversals, balance queries and reconciliation API).
+- **Phase 06 — Receipt Posting Orchestration & General Ledger Posting**: ⏳ **NEXT UP** (Atomic receipt post transition `DRAFT` $\to$ `POSTED`, automated double-entry GL journal creation `1200` vs `2100`, accounting periods, idempotency keys).
 
 ---
 
@@ -129,6 +130,13 @@ curl -X POST http://localhost:4000/api/v1/receipts \
   }'
 ```
 
+### 5.4 Inventory Ledger & Balances (Phase 05)
+
+- `GET /api/v1/inventory/balances`: List tenant stock balances with pagination (`page`, `limit`), sorting (`sortBy`, `sortOrder`), search (`search`), warehouse (`warehouseId`), and item (`itemId`) filters.
+- `GET /api/v1/inventory/balances/:warehouseId/:itemId`: Retrieve real-time stock balance snapshot (`quantityOnHand`, `totalValue`, `averageCost`, `version`).
+- `GET /api/v1/inventory/movements`: Query append-only stock movement ledger with pagination, type filter (`movementType`), warehouse filter, item filter, and date ranges.
+- `GET /api/v1/inventory/reconcile/:warehouseId/:itemId`: Real-time read-only audit comparing live materialized balance snapshot against total aggregated ledger movements. Returns `{ inSync: true/false, deltaQuantity, deltaTotalValue }`.
+
 ---
 
 ## 6. Installation & Setup
@@ -199,10 +207,11 @@ pnpm build
 
 ---
 
-## 9. Next Phase: Phase 05
+## 9. Next Phase: Phase 06
 
-**Phase 05 — Core Domain Services, Costing & GL Posting Engine**:
+**Phase 06 — Receipt Posting Orchestration & General Ledger Posting**:
 
-- Implementing `CostingEngineService` (moving weighted-average formula & standard cost fallback).
-- Implementing `PostingEngineService` (generating balanced General Ledger debit/credit entries).
+- Implementing `PostingEngineService` (generating balanced double-entry General Ledger debit/credit records).
 - Implementing `ReceiptPostingService` (atomic PostgreSQL ACID transaction updating stock, ledger, and status from `DRAFT` to `POSTED`).
+- Accounting period verification (verifying receipt date against active open fiscal period).
+- Idempotency protection via `IdempotencyRecord`.

@@ -4,7 +4,7 @@
 
 The `backend` workspace provides the server-side API foundation for the **Inventory Receipts with Costing and GL Posting** system. It is built with **NestJS 11**, **TypeScript (Strict Mode)**, and **Prisma ORM 6** connecting to **PostgreSQL 16**.
 
-> **Phase 04 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, and complete draft receipts management API (`POST /receipts`, `GET /receipts`, `GET /receipts/:id`, `PATCH /receipts/:id`, `PUT /receipts/:id/lines`, line management endpoints, and deletion guards). Stock ledger updates and GL posting will be implemented in Phase 05.
+> **Phase 05 Notice**: The backend implements the core infrastructure, PostgreSQL database models, enterprise security perimeter, Argon2id authentication, JWT verification, RBAC authorization, multi-tenant isolation guarding, complete draft receipts management API, and **inventory ledger & moving average costing engine** (`CostingEngineService`, `StockBalanceService`, `InventoryLedgerService`, `InventoryController`). Receipt posting orchestration and GL posting will be implemented in Phase 06.
 
 ---
 
@@ -50,6 +50,18 @@ backend/
 │   │   ├── companies.controller.ts # Guarded tenant endpoints
 │   │   ├── companies.module.ts
 │   │   └── companies.service.ts    # Tenant-scoped queries
+│   ├── inventory/              # Inventory Ledger, Balances & Costing (Phase 05)
+│   │   ├── costing/            # Moving weighted-average costing engine
+│   │   │   ├── costing-engine.service.ts
+│   │   │   └── costing-engine.service.spec.ts
+│   │   ├── dto/                # QueryStockBalancesDto, QueryStockMovementsDto
+│   │   ├── exceptions/         # InsufficientStockException
+│   │   ├── inventory.controller.ts # /api/v1/inventory/balances, /movements, /reconcile
+│   │   ├── inventory.module.ts
+│   │   ├── inventory-ledger.service.ts # Append-only ledger & compensating reversals
+│   │   ├── inventory-ledger.service.spec.ts
+│   │   ├── stock-balance.service.ts    # Atomic upsert, SELECT FOR UPDATE locking & audit
+│   │   └── stock-balance.service.spec.ts
 │   ├── receipts/               # Inventory Receipts Draft Management (Phase 04)
 │   │   ├── dto/                # Create, Update, ReplaceLines, and Query DTOs
 │   │   ├── utils/              # DecimalMath utility and custom decimal validators
@@ -73,6 +85,7 @@ backend/
 │   ├── app.e2e-spec.ts         # Health check E2E suite
 │   ├── auth-and-multi-tenancy.e2e-spec.ts # Full security & tenant boundary E2E suite
 │   ├── receipts.e2e-spec.ts    # Full draft lifecycle, validation, and precision E2E suite
+│   ├── inventory-ledger-and-costing.e2e-spec.ts # Ledger, concurrency lock, and costing E2E suite
 │   └── jest-e2e.json           # Jest E2E test runner configuration
 ├── .env.example                # Example environment variables
 ├── .gitignore                  # Backend-specific ignore rules

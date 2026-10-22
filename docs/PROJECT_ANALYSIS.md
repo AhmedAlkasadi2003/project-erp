@@ -1,7 +1,7 @@
 # Project Domain & Database Architecture Analysis
 
 **Project**: Inventory Receipts with Costing and GL Posting  
-**Phase**: Phase 04 — Inventory Receipts Drafts & Management API  
+**Phase**: Phase 05 — Inventory Ledger, Stock Balances & Weighted Average Costing  
 **Author**: Principal / Senior Backend Engineer & Software Architect
 
 ---
@@ -194,3 +194,101 @@ $$\text{Receipt Total Amount} = \text{Receipt Subtotal} + \text{Receipt Tax Amou
 2. **IDOR & Scoped Access**: Any attempt to retrieve, update, or delete a receipt belonging to another tenant is blocked with `HTTP 403 Forbidden` (`Cross-company access denied`).
 3. **Sequential Line Numbering**: Line numbers (`lineNumber`) are maintained sequentially ($1, 2, \dots, n$) without gaps during line additions, deletions, or reconciliations.
 4. **Draft-Only Mutation Invariant**: Once a receipt transitions out of `DRAFT` status (`POSTED` or `CANCELLED`), updates and deletions are strictly blocked with `HTTP 400 Bad Request` or `HTTP 409 Conflict`.
+
+---
+
+## 8. Phase 05 Inventory Ledger, Stock Balances & Weighted Average Costing
+
+### 8.1 Moving Weighted-Average Costing Engine
+
+Inventory valuation in this system is governed by a perpetual moving weighted-average costing policy maintained per discrete tuple `[companyId, warehouseId, itemId]`.
+
+#### Inbound Intake Mathematical Formulation
+
+When incoming stock of quantity $Q_{\text{in}}$ at unit cost $C_{\text{in}}$ is received against an existing stock balance with quantity $Q_{\text{prev}}$ and total value $V_{\text{prev}}$:
+
+$$\text{Incoming Value} = \text{round}_4(Q_{\text{in}} \times C_{\text{in}})$$
+$$Q_{\text{new}} = Q_{\text{prev}} + Q_{\text{in}}$$
+$$V_{\text{new}} = V_{\text{prev}} + \text{Incoming Value}$$
+
+$$ C_{\text{new}} = \begin{cases}
+C_{\text{in}}, & \text{if } Q_{\text{prev}} \le 0 \\
+\text{round}_4\left(\frac{V_{\text{new}}}{Q_{\text{new}}}\right), & \text{if } Q_{\text{prev}} > 0
+\end{cases}$$
+
+#### Outbound Relieving & Zero Residual Penny Invariant
+When stock is issued or relieved ($Q_{\text{out}}$):
+1. **Relieving Rate**: Relieved strictly at current moving average cost $C_{\text{avg}} = \text{current averageCost}$.
+2. **Relieved Value**: $V_{\text{out}} = \text{round}_4(Q_{\text{out}} \times C_{\text{avg}})$.
+3. **Depletion Zeroing Rule**: In standard decimal arithmetic, successive issues with fractional unit costs can leave fractional pennies (e.g. $\$0.0001$) on balance sheets when on-hand quantity drops to zero. To ensure complete financial integrity, the costing engine enforces:
+$$Q_{\text{new}} = Q_{\text{prev}} - Q_{\text{out}}$$
+$$\text{If } Q_{\text{new}} = 0 \implies V_{\text{new}} = 0.0000 \text{ and } C_{\text{new}} = 0.0000$$
+4. **Insufficient Stock Defense**: If $Q_{\text{out}} > Q_{\text{prev}}$, the transaction is rejected immediately with `InsufficientStockException` (HTTP 400 Bad Request), preventing negative physical stock.
+
+### 8.2 Database Concurrency & Race-Condition Architecture
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant Service as InventoryLedgerService
+    participant BalanceService as StockBalanceService
+    participant DB as PostgreSQL 16 (ACID Tx)
+
+    Client->>Service: recordInboundMovement(dto)
+    Service->>DB: BEGIN Transaction
+    Service->>BalanceService: lockBalanceForUpdate(companyId, warehouseId, itemId)
+    Note over BalanceService,DB: Step 1: Atomic Upsert to guarantee row exists
+    BalanceService->>DB: INSERT INTO stock_balances (...) VALUES (...) ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING
+    Note over BalanceService,DB: Step 2: Acquire exclusive row lock
+    BalanceService->>DB: SELECT * FROM stock_balances WHERE ... FOR UPDATE
+    DB-->>BalanceService: Locked StockBalance Record
+    BalanceService-->>Service: Current Balance State
+    Service->>Service: CostingEngineService.calculateInbound(...)
+    Service->>DB: UPDATE stock_balances SET quantityOnHand, totalValue, averageCost, version = version + 1
+    Service->>DB: INSERT INTO stock_movements (append-only ledger)
+    Service->>DB: COMMIT Transaction
+    DB-->>Service: Success
+    Service-->>Client: Created StockMovement & Updated Balance
+```
+
+#### The Initial-Balance Race Condition Fix
+In concurrent systems, standard `SELECT ... FOR UPDATE` returns an empty set if the row does not yet exist. If two concurrent transactions attempt to intake the very first item for a warehouse simultaneously, both would see no row, proceed to insert new rows, and one would crash with a unique constraint violation or overwrite the other's balance.
+
+This is solved permanently using PostgreSQL atomic upsert:
+```sql
+INSERT INTO "stock_balances" ("id", "companyId", "warehouseId", "itemId", "quantityOnHand", "totalValue", "averageCost", "version", "createdAt", "updatedAt")
+VALUES (gen_random_uuid()::text, $1, $2, $3, 0, 0, 0, 0, NOW(), NOW())
+ON CONFLICT ("companyId", "warehouseId", "itemId") DO NOTHING;
+```
+Immediately followed by:
+```sql
+SELECT * FROM "stock_balances"
+WHERE "companyId" = $1 AND "warehouseId" = $2 AND "itemId" = $3
+FOR UPDATE;
+```
+This guarantees the row exists and is exclusively held by the transaction before reading balances or computing moving averages.
+
+#### Deterministic Deadlock Prevention
+When multiple items are processed in a single batch, item keys are locked in strict ascending alphanumeric order by `itemId: 'asc'` to eliminate circular wait lock chains.
+
+#### Transient Failure Retry Strategy
+PostgreSQL serialization conflicts (`40001`), deadlocks (`40P01`), and Prisma write conflicts (`P2034`) are caught by `withRetry` using bounded exponential backoff with random jitter (up to 3 retries, initial delay 50ms, max delay 500ms).
+
+### 8.3 Stock Movement Ledger & Compensating Reversals
+
+1. **Append-Only Immutability**: `StockMovement` records are never updated or deleted.
+2. **Compensating Reversal Policy**:
+   - Reversing a movement (`reverseMovement`) creates a new compensating movement with `referenceType = 'STOCK_MOVEMENT_REVERSAL'` and `referenceId = originalMovementId`.
+   - Inbound reversals relieve stock at the original movement's cost (verifying sufficient stock exists first).
+   - Outbound reversals restore stock and recompute moving weighted average cost.
+   - Duplicate reversals on the same original movement are blocked with `ConflictException` (HTTP 409).
+
+### 8.4 Real-Time Balance Reconciliation Engine
+
+The system provides an automated audit endpoint `GET /api/v1/inventory/reconcile/:warehouseId/:itemId`:
+- Calculates the sum of all inbound and outbound quantities and values across `StockMovement` records.
+- Compares these mathematical sums against the materialized `StockBalance` row.
+- Returns `{ inSync: boolean, deltaQuantity: string, deltaTotalValue: string, balanceSnapshot, calculatedLedger }`.
+- Enables automated financial integrity audits without locking ledger tables.
+$$

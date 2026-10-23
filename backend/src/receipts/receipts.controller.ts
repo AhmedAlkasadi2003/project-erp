@@ -93,7 +93,13 @@ export class ReceiptsController {
    * Update header fields of a draft receipt.
    */
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async updateReceipt(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -106,7 +112,13 @@ export class ReceiptsController {
    * Replace or reconcile draft lines atomically.
    */
   @Put(':id/lines')
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async replaceReceiptLines(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -119,7 +131,13 @@ export class ReceiptsController {
    * Alias for PATCH :id/lines for flexible REST client compatibility.
    */
   @Patch(':id/lines')
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async patchReceiptLines(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -133,7 +151,13 @@ export class ReceiptsController {
    */
   @Post(':id/lines')
   @HttpCode(HttpStatus.CREATED)
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async addLine(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -146,7 +170,13 @@ export class ReceiptsController {
    * Update a specific line in a draft receipt.
    */
   @Patch(':id/lines/:lineId')
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async updateLine(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -160,7 +190,13 @@ export class ReceiptsController {
    * Remove a single line from a draft receipt.
    */
   @Delete(':id/lines/:lineId')
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.CLERK, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async removeLine(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -174,7 +210,13 @@ export class ReceiptsController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.ADMIN, UserRole.WAREHOUSE_MANAGER, UserRole.SUPER_ADMIN)
+  @Roles(
+    UserRole.ADMIN,
+    UserRole.WAREHOUSE_MANAGER,
+    UserRole.CLERK,
+    UserRole.ACCOUNTANT,
+    UserRole.SUPER_ADMIN,
+  )
   async deleteReceipt(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,

@@ -3,6 +3,7 @@ import { Receipt } from '../../types';
 import { useLocale } from '../../context/LocaleContext';
 import { ConfirmModal } from '../common/ConfirmModal';
 import * as receiptsApi from '../../api/receipts';
+import { ApiError } from '../../api/client';
 
 interface VoidReceiptModalProps {
   receipt: Receipt | null;
@@ -39,8 +40,12 @@ export const VoidReceiptModal: React.FC<VoidReceiptModalProps> = ({
       onSuccess(updated);
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to void receipt';
-      onError(msg);
+      if (err instanceof ApiError && err.status === 409) {
+        onError(t.receipts.conflictError);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Failed to void receipt';
+        onError(msg);
+      }
     } finally {
       setSubmitting(false);
     }

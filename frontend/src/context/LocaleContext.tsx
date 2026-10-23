@@ -1,15 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Locale, Translations, translations } from '../i18n/translations';
-
-interface LocaleContextType {
-  locale: Locale;
-  dir: 'ltr' | 'rtl';
-  setLocale: (locale: Locale) => void;
-  t: Translations;
-  formatDate: (dateStr: string | null | undefined) => string;
-  formatCurrency: (amount: string | number | null | undefined, currency?: string) => string;
-  formatQuantity: (qty: string | number | null | undefined) => string;
-}
+import { Locale, LocaleContextType } from '../types';
+import { translations } from '../i18n';
 
 const LocaleContext = createContext<LocaleContextType | undefined>(undefined);
 

@@ -1,8 +1,10 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
+import { AppView } from '../../types';
+import { getAuthorizedNavItems } from '../../config/navigation';
 
-export type AppView = 'receipts' | 'create-receipt' | 'edit-receipt' | 'receipt-details' | 'health';
+export type { AppView };
 
 interface NavbarProps {
   currentView: AppView;
@@ -16,6 +18,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
   const toggleLanguage = () => {
     setLocale(locale === 'en' ? 'ar' : 'en');
   };
+
+  const authorizedItems = getAuthorizedNavItems(user?.role);
 
   return (
     <header className="app-navbar" role="banner">
@@ -33,30 +37,24 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
         </div>
 
         <nav className="navbar-nav" aria-label="Main Navigation">
-          <button
-            type="button"
-            className={`nav-link ${currentView === 'receipts' || currentView === 'receipt-details' ? 'active' : ''}`}
-            onClick={() => onNavigate('receipts')}
-            aria-current={currentView === 'receipts' ? 'page' : undefined}
-          >
-            {t.nav.receipts}
-          </button>
-          <button
-            type="button"
-            className={`nav-link ${currentView === 'create-receipt' ? 'active' : ''}`}
-            onClick={() => onNavigate('create-receipt')}
-            aria-current={currentView === 'create-receipt' ? 'page' : undefined}
-          >
-            {t.nav.newReceipt}
-          </button>
-          <button
-            type="button"
-            className={`nav-link ${currentView === 'health' ? 'active' : ''}`}
-            onClick={() => onNavigate('health')}
-            aria-current={currentView === 'health' ? 'page' : undefined}
-          >
-            {t.nav.systemHealth}
-          </button>
+          {authorizedItems.map((item) => {
+            const isReceiptGroup =
+              item.id === 'receipts' &&
+              (currentView === 'receipts' || currentView === 'receipt-details');
+            const isActive = currentView === item.id || isReceiptGroup;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`nav-link ${isActive ? 'active' : ''}`}
+                onClick={() => onNavigate(item.id)}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {t.nav[item.labelKey]}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="navbar-actions">

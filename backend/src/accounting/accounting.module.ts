@@ -8,6 +8,8 @@ import { InventoryAccountsService } from './inventory-accounts/inventory-account
 import { JournalEntriesController } from './journal/journal-entries.controller';
 import { JournalEntriesService } from './journal/journal-entries.service';
 import { JournalValidatorService } from './journal/journal-validator.service';
+import { AccountingReportsController } from './reports/accounting-reports.controller';
+import { AccountingReportsService } from './reports/accounting-reports.service';
 
 @Module({
   controllers: [
@@ -15,6 +17,7 @@ import { JournalValidatorService } from './journal/journal-validator.service';
     AccountingPeriodsController,
     InventoryAccountsController,
     JournalEntriesController,
+    AccountingReportsController,
   ],
   providers: [
     AccountsService,
@@ -22,6 +25,7 @@ import { JournalValidatorService } from './journal/journal-validator.service';
     InventoryAccountsService,
     JournalValidatorService,
     JournalEntriesService,
+    AccountingReportsService,
   ],
   exports: [
     AccountsService,
@@ -29,6 +33,7 @@ import { JournalValidatorService } from './journal/journal-validator.service';
     InventoryAccountsService,
     JournalValidatorService,
     JournalEntriesService,
+    AccountingReportsService,
   ],
 })
 export class AccountingModule {}

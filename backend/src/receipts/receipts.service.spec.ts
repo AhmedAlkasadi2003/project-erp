@@ -7,6 +7,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, ReceiptStatus, UserRole } from '@prisma/client';
 import { ReceiptsService } from './receipts.service';
+import { ReceiptLinesService } from './receipt-lines.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('ReceiptsService (Unit)', () => {
@@ -69,7 +70,11 @@ describe('ReceiptsService (Unit)', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ReceiptsService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ReceiptsService,
+        ReceiptLinesService,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
     }).compile();
 
     service = module.get<ReceiptsService>(ReceiptsService);

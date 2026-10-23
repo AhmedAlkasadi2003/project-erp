@@ -1,0 +1,457 @@
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useLocale } from '../../context/LocaleContext';
+import {
+  createAccount,
+  deleteAccount,
+  getAccounts,
+  getInventoryAccountsConfig,
+  updateAccount,
+  updateInventoryAccountsConfig,
+} from '../../api/accounting';
+import { Account, AccountNormalBalance, AccountType, InventoryAccountsConfig } from '../../types';
+import { Alert } from '../common/Alert';
+import { LoadingSpinner } from '../common/LoadingSpinner';
+import { ConfirmModal } from '../common/ConfirmModal';
+
+export const ChartOfAccountsView: React.FC = () => {
+  const { user } = useAuth();
+  const { t } = useLocale();
+
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [config, setConfig] = useState<InventoryAccountsConfig | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Filters
+  const [search, setSearch] = useState<string>('');
+  const [selectedType, setSelectedType] = useState<string>('');
+
+  // Modals
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [code, setCode] = useState<string>('');
+  const [name, setName] = useState<string>('');
+  const [type, setType] = useState<AccountType>('ASSET');
+  const [normalBalance, setNormalBalance] = useState<AccountNormalBalance>('DEBIT');
+  const [description, setDescription] = useState<string>('');
+
+  // Delete Confirm
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<boolean>(false);
+
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const isAccountant = user?.role === 'ACCOUNTANT';
+  const canEdit = isAdmin || isAccountant;
+  const canDelete = isAdmin; // Only ADMIN can delete accounts!
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [accRes, cfgRes] = await Promise.all([
+        getAccounts({
+          search: search || undefined,
+          type: (selectedType as AccountType) || undefined,
+          limit: 100,
+        }),
+        getInventoryAccountsConfig(),
+      ]);
+      const list = accRes.data || (accRes as unknown as { items?: Account[] }).items || [];
+      setAccounts(Array.isArray(list) ? list : []);
+      setConfig(cfgRes);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t.common.error);
+      setAccounts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [search, selectedType]);
+
+  const handleOpenCreate = () => {
+    setEditingAccount(null);
+    setCode('');
+    setName('');
+    setType('ASSET');
+    setNormalBalance('DEBIT');
+    setDescription('');
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (acc: Account) => {
+    setEditingAccount(acc);
+    setCode(acc.code);
+    setName(acc.name);
+    setType(acc.type);
+    setNormalBalance(acc.normalBalance);
+    setDescription(acc.description || '');
+    setShowModal(true);
+  };
+
+  const handleSaveAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      if (editingAccount) {
+        await updateAccount(editingAccount.id, {
+          name,
+          description: description || undefined,
+        });
+        setSuccessMsg(t.receipts.updatedSuccess);
+      } else {
+        await createAccount({
+          code,
+          name,
+          type,
+          normalBalance,
+          description: description || undefined,
+        });
+        setSuccessMsg(t.receipts.createdSuccess);
+      }
+      setShowModal(false);
+      loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t.common.error);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteAccount(deleteId);
+      setSuccessMsg(t.receipts.deletedSuccess);
+      setDeleteId(null);
+      loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t.common.error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleSetGrnClearing = async (accountId: string) => {
+    if (!canEdit) return;
+    try {
+      await updateInventoryAccountsConfig(accountId);
+      setSuccessMsg(t.accounting.grnClearingUpdated);
+      loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t.common.error);
+    }
+  };
+
+  return (
+    <div className="coa-container">
+      <div className="view-header">
+        <div>
+          <h2 className="view-title">{t.accounting.accountsTitle}</h2>
+          <p className="view-subtitle">{t.accounting.accountsSubtitle}</p>
+        </div>
+        {canEdit && (
+          <button type="button" className="btn btn-primary" onClick={handleOpenCreate}>
+            + {t.accounting.newAccount}
+          </button>
+        )}
+      </div>
+
+      {!canEdit && (
+        <Alert
+          type="info"
+          message={t.accounting.readOnlyNotice}
+        />
+      )}
+
+      {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
+      {successMsg && <Alert type="success" message={successMsg} onClose={() => setSuccessMsg(null)} />}
+
+      {/* GRN Clearing Configuration Card */}
+      {config && (
+        <div className="card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderLeft: '4px solid #3b82f6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b' }}>
+                📌 {t.accounting.grnClearingTitle}
+              </h3>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#64748b' }}>
+                {t.accounting.grnClearingDesc}
+              </p>
+            </div>
+            <div>
+              {config.grnClearingAccount ? (
+                <span className="badge badge-success font-mono" style={{ fontSize: '0.95rem', padding: '0.5rem 0.75rem' }}>
+                  {config.grnClearingAccount.code} — {config.grnClearingAccount.name} ({config.grnClearingAccount.type})
+                </span>
+              ) : (
+                <span className="badge badge-warning">لم يتم تحديد حساب وسيط بعد</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search and Filters */}
+      <div className="card filter-card" style={{ marginBottom: '1.5rem' }}>
+        <div className="form-grid-3">
+          <div className="form-group">
+            <label htmlFor="coa-search" className="form-label">{t.receipts.searchPlaceholder}</label>
+            <input
+              id="coa-search"
+              type="text"
+              className="form-input"
+              placeholder="ابحث بالرمز أو اسم الحساب..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="coa-type" className="form-label">{t.accounting.accountType}</label>
+            <select
+              id="coa-type"
+              className="form-input form-select"
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+            >
+              <option value="">جميع التصنيفات</option>
+              <option value="ASSET">أصول (ASSET)</option>
+              <option value="LIABILITY">خصوم / التزامات (LIABILITY)</option>
+              <option value="EQUITY">حقوق ملكية (EQUITY)</option>
+              <option value="REVENUE">إيرادات (REVENUE)</option>
+              <option value="EXPENSE">مصروفات (EXPENSE)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingSpinner message={t.common.loading} />
+      ) : (
+        <div className="card table-card">
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>{t.accounting.accountCode}</th>
+                  <th>{t.accounting.accountName}</th>
+                  <th>{t.accounting.accountType}</th>
+                  <th>{t.accounting.normalBalance}</th>
+                  <th>{t.accounting.activeStatus}</th>
+                  <th style={{ textAlign: 'center' }}>خصائص وميزات</th>
+                  {canEdit && <th style={{ textAlign: 'center' }}>{t.receipts.actions}</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {(!accounts || accounts.length === 0) && (
+                  <tr>
+                    <td colSpan={canEdit ? 7 : 6} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                      لا توجد حسابات مسجلة تطابق معايير البحث
+                    </td>
+                  </tr>
+                )}
+                {(accounts || []).map((acc) => {
+                  const isGrn = config?.grnClearingAccountId === acc.id;
+                  return (
+                    <tr key={acc.id} style={isGrn ? { backgroundColor: '#f0f9ff' } : undefined}>
+                      <td className="font-mono font-bold">{acc.code}</td>
+                      <td>
+                        <strong>{acc.name}</strong>
+                        {acc.description && (
+                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{acc.description}</div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${acc.type === 'ASSET' ? 'badge-info' : acc.type === 'LIABILITY' ? 'badge-warning' : 'badge-default'}`}>
+                          {acc.type}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge">{acc.normalBalance}</span>
+                      </td>
+                      <td>
+                        <span className={`badge ${acc.isActive ? 'badge-success' : 'badge-danger'}`}>
+                          {acc.isActive ? 'نشط' : 'معطل'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {isGrn && (
+                          <span className="badge badge-success font-bold" title="حساب وسيط البضائع الافتراضي">
+                            ✓ وسيط البضائع (GRN)
+                          </span>
+                        )}
+                        {acc.isSystem && (
+                          <span className="badge badge-default" style={{ marginInlineStart: '0.25rem' }}>
+                            نظامي
+                          </span>
+                        )}
+                      </td>
+                      {canEdit && (
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                            {canEdit && acc.type === 'LIABILITY' && !isGrn && (
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline"
+                                onClick={() => handleSetGrnClearing(acc.id)}
+                                title={t.accounting.setGrnClearing}
+                              >
+                                تعيين GRN
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline"
+                              onClick={() => handleOpenEdit(acc)}
+                            >
+                              {t.receipts.edit}
+                            </button>
+                            {canDelete && (
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline text-danger"
+                                onClick={() => setDeleteId(acc.id)}
+                                disabled={acc.isSystem || isGrn}
+                                title={acc.isSystem || isGrn ? 'لا يمكن حذف الحسابات النظامية أو الوسيطة' : t.accounting.deleteAccount}
+                              >
+                                {t.receipts.delete}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">
+                {editingAccount ? t.accounting.editAccount : t.accounting.newAccount}
+              </h3>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => setShowModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveAccount}>
+              <div className="modal-body">
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">{t.accounting.accountCode}</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    required
+                    disabled={Boolean(editingAccount)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">{t.accounting.accountName}</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {!editingAccount && (
+                  <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">{t.accounting.accountType}</label>
+                      <select
+                        className="form-input form-select"
+                        value={type}
+                        onChange={(e) => {
+                          const val = e.target.value as AccountType;
+                          setType(val);
+                          setNormalBalance(val === 'ASSET' || val === 'EXPENSE' ? 'DEBIT' : 'CREDIT');
+                        }}
+                      >
+                        <option value="ASSET">ASSET (أصول)</option>
+                        <option value="LIABILITY">LIABILITY (خصوم / التزامات)</option>
+                        <option value="EQUITY">EQUITY (حقوق ملكية)</option>
+                        <option value="REVENUE">REVENUE (إيرادات)</option>
+                        <option value="EXPENSE">EXPENSE (مصروفات)</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">{t.accounting.normalBalance}</label>
+                      <select
+                        className="form-input form-select"
+                        value={normalBalance}
+                        onChange={(e) => setNormalBalance(e.target.value as AccountNormalBalance)}
+                      >
+                        <option value="DEBIT">مدين (DEBIT)</option>
+                        <option value="CREDIT">دائن (CREDIT)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">الوصف والملاحظات</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setShowModal(false)}
+                >
+                  {t.common.cancel}
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {t.common.save}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteId && (
+        <ConfirmModal
+          isOpen={Boolean(deleteId)}
+          title={t.accounting.deleteConfirmTitle}
+          subtitle={t.accounting.deleteConfirmMessage}
+          confirmLabel={t.receipts.delete}
+          cancelLabel={t.common.cancel}
+          confirmVariant="danger"
+          loading={deleting}
+          onConfirm={handleDeleteAccount}
+          onCancel={() => setDeleteId(null)}
+        />
+      )}
+    </div>
+  );
+};

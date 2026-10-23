@@ -1,4 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useForm, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   CreateReceiptDto,
   CreateReceiptLineDto,
@@ -11,9 +14,37 @@ import { useAuth } from '../../context/AuthContext';
 import { useLocale } from '../../context/LocaleContext';
 import { Alert } from '../common/Alert';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { FormField } from '../common/FormField';
+import { translateErrorMessage } from '../../i18n/errorTranslator';
 import * as receiptsApi from '../../api/receipts';
 import * as referencesApi from '../../api/references';
 import { ApiError } from '../../api/client';
+
+const receiptLineSchema = z.object({
+  id: z.string().optional(),
+  itemId: z.string().min(1, 'Item selection is required'),
+  quantityReceived: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, 'Quantity must be greater than 0'),
+  unitCost: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, 'Unit cost cannot be negative'),
+  taxAmount: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const receiptFormSchema = z.object({
+  warehouseId: z.string().min(1, 'Warehouse selection is required'),
+  supplierId: z.string().min(1, 'Supplier selection is required'),
+  receiptNumber: z.string().optional(),
+  receiptDate: z.string().min(1, 'Receipt date is required'),
+  notes: z.string().optional(),
+  lines: z.array(receiptLineSchema).min(1, 'At least one line item is required'),
+});
+
+type ReceiptFormValues = z.infer<typeof receiptFormSchema>;
 
 interface ReceiptFormProps {
   receiptId?: string | null;
@@ -21,18 +52,9 @@ interface ReceiptFormProps {
   onCancel: () => void;
 }
 
-interface FormLineState {
-  id?: string;
-  itemId: string;
-  quantityReceived: string;
-  unitCost: string;
-  taxAmount: string;
-  notes: string;
-}
-
 export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, onCancel }) => {
   const { user } = useAuth();
-  const { t, formatCurrency } = useLocale();
+  const { t, locale, formatCurrency } = useLocale();
 
   const isEditMode = Boolean(receiptId);
 
@@ -41,34 +63,77 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [items, setItems] = useState<Item[]>([]);
 
-  // Form states
-  const [warehouseId, setWarehouseId] = useState<string>('');
-  const [supplierId, setSupplierId] = useState<string>('');
-  const [receiptNumber, setReceiptNumber] = useState<string>('');
-  const [receiptDate, setReceiptDate] = useState<string>(
-    () => new Date().toISOString().split('T')[0],
-  );
-  const [notes, setNotes] = useState<string>('');
-  const [lines, setLines] = useState<FormLineState[]>([
-    { itemId: '', quantityReceived: '1.0000', unitCost: '0.0000', taxAmount: '0.0000', notes: '' },
-  ]);
-
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isNonDraftLocked, setIsNonDraftLocked] = useState<boolean>(false);
 
-  // Client calculation preview
-  const calculatePreviewTotal = useCallback(() => {
-    let subtotal = 0;
-    for (const l of lines) {
-      const q = parseFloat(l.quantityReceived) || 0;
-      const c = parseFloat(l.unitCost) || 0;
-      subtotal += q * c;
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<ReceiptFormValues>({
+    resolver: zodResolver(receiptFormSchema),
+    defaultValues: {
+      warehouseId: '',
+      supplierId: '',
+      receiptNumber: '',
+      receiptDate: new Date().toISOString().split('T')[0],
+      notes: '',
+      lines: [
+        {
+          itemId: '',
+          quantityReceived: '1.0000',
+          unitCost: '0.0000',
+          taxAmount: '0.0000',
+          notes: '',
+        },
+      ],
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'lines',
+  });
+
+  const watchedLines = watch('lines');
+
+  // Client calculation preview using safe integer minor-units math (no IEEE floats)
+  const previewTotal = useMemo(() => {
+    if (!watchedLines || watchedLines.length === 0) return '0.0000';
+    let totalCents = 0n; // 4 decimals -> 10000 scale
+    for (const l of watchedLines) {
+      if (!l) continue;
+      const qStr = l.quantityReceived || '0';
+      const cStr = l.unitCost || '0';
+
+      const parseDec4 = (str: string): bigint => {
+        const parts = str.split('.');
+        const whole = BigInt(parts[0] || '0');
+        const frac = BigInt((parts[1] || '').padEnd(4, '0').slice(0, 4));
+        const sign = parts[0]?.startsWith('-') ? -1n : 1n;
+        return whole * 10000n + (sign < 0n ? -frac : frac);
+      };
+
+      const q = parseDec4(qStr);
+      const c = parseDec4(cStr);
+      const product = q * c;
+      const rounded = (product + 5000n) / 10000n;
+      totalCents += rounded;
     }
-    return Math.round(subtotal * 10000) / 10000;
-  }, [lines]);
+
+    const isNeg = totalCents < 0n;
+    const abs = isNeg ? -totalCents : totalCents;
+    const whole = abs / 10000n;
+    const frac = abs % 10000n;
+    return `${isNeg ? '-' : ''}${whole}.${frac.toString().padStart(4, '0')}`;
+  }, [watchedLines]);
 
   const loadReferences = useCallback(async () => {
     if (!user?.companyId) return;
@@ -82,31 +147,25 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
       setSuppliers(supList);
       setItems(itemList);
 
-      // Default first warehouse and supplier for quick creation
       if (!isEditMode) {
-        if (whList.length > 0) setWarehouseId((prev) => prev || whList[0].id);
-        if (supList.length > 0) setSupplierId((prev) => prev || supList[0].id);
+        if (whList.length > 0) setValue('warehouseId', whList[0].id);
+        if (supList.length > 0) setValue('supplierId', supList[0].id);
         if (itemList.length > 0) {
-          setLines((prev) => {
-            if (prev.length === 1 && !prev[0].itemId) {
-              return [
-                {
-                  itemId: itemList[0].id,
-                  quantityReceived: '1.0000',
-                  unitCost: '10.0000',
-                  taxAmount: '0.0000',
-                  notes: '',
-                },
-              ];
-            }
-            return prev;
-          });
+          setValue('lines', [
+            {
+              itemId: itemList[0].id,
+              quantityReceived: '1.0000',
+              unitCost: '10.0000',
+              taxAmount: '0.0000',
+              notes: '',
+            },
+          ]);
         }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load master reference data');
     }
-  }, [user?.companyId, isEditMode]);
+  }, [user?.companyId, isEditMode, setValue]);
 
   const loadReceiptForEdit = useCallback(async () => {
     if (!receiptId) return;
@@ -115,28 +174,36 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
       if (r.status !== 'DRAFT') {
         setIsNonDraftLocked(true);
       }
-      setWarehouseId(r.warehouseId);
-      setSupplierId(r.supplierId);
-      setReceiptNumber(r.receiptNumber);
-      setReceiptDate(r.receiptDate ? r.receiptDate.split('T')[0] : '');
-      setNotes(r.notes || '');
-
-      if (r.lines && r.lines.length > 0) {
-        setLines(
-          r.lines.map((l) => ({
-            id: l.id,
-            itemId: l.itemId,
-            quantityReceived: l.quantityReceived,
-            unitCost: l.unitCost,
-            taxAmount: l.taxAmount,
-            notes: l.notes || '',
-          })),
-        );
-      }
+      reset({
+        warehouseId: r.warehouseId,
+        supplierId: r.supplierId,
+        receiptNumber: r.receiptNumber,
+        receiptDate: r.receiptDate ? r.receiptDate.split('T')[0] : '',
+        notes: r.notes || '',
+        lines:
+          r.lines && r.lines.length > 0
+            ? r.lines.map((l) => ({
+                id: l.id,
+                itemId: l.itemId,
+                quantityReceived: l.quantityReceived,
+                unitCost: l.unitCost,
+                taxAmount: l.taxAmount,
+                notes: l.notes || '',
+              }))
+            : [
+                {
+                  itemId: '',
+                  quantityReceived: '1.0000',
+                  unitCost: '0.0000',
+                  taxAmount: '0.0000',
+                  notes: '',
+                },
+              ],
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load receipt details');
     }
-  }, [receiptId]);
+  }, [receiptId, reset]);
 
   useEffect(() => {
     const init = async () => {
@@ -152,101 +219,58 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
 
   const handleAddLine = () => {
     const defaultItemId = items.length > 0 ? items[0].id : '';
-    setLines([
-      ...lines,
-      {
-        itemId: defaultItemId,
-        quantityReceived: '1.0000',
-        unitCost: '0.0000',
-        taxAmount: '0.0000',
-        notes: '',
-      },
-    ]);
+    append({
+      itemId: defaultItemId,
+      quantityReceived: '1.0000',
+      unitCost: '0.0000',
+      taxAmount: '0.0000',
+      notes: '',
+    });
   };
 
   const handleRemoveLine = (index: number) => {
-    if (lines.length <= 1) {
+    if (fields.length <= 1) {
       setError(t.common.atLeastOneLine);
       return;
     }
-    const updated = lines.filter((_, idx) => idx !== index);
-    setLines(updated);
+    remove(index);
   };
 
-  const handleLineChange = (index: number, field: keyof FormLineState, value: string) => {
-    const updated = [...lines];
-    updated[index] = { ...updated[index], [field]: value };
-    setLines(updated);
-  };
-
-  const validateClientSide = (): boolean => {
-    const errors: string[] = [];
-    if (!warehouseId) errors.push(t.receipts.selectWarehouse);
-    if (!supplierId) errors.push(t.receipts.selectSupplier);
-    if (!receiptDate) errors.push(t.common.required + ': ' + t.receipts.date);
-
-    if (lines.length === 0) {
-      errors.push(t.common.atLeastOneLine);
-    }
-
-    lines.forEach((l, idx) => {
-      if (!l.itemId) {
-        errors.push(`Line ${idx + 1}: ${t.receipts.selectItem}`);
-      }
-      const q = parseFloat(l.quantityReceived);
-      if (isNaN(q) || q <= 0) {
-        errors.push(`Line ${idx + 1}: ${t.common.invalidQuantity}`);
-      }
-      const c = parseFloat(l.unitCost);
-      if (isNaN(c) || c < 0) {
-        errors.push(`Line ${idx + 1}: ${t.common.invalidCost}`);
-      }
-    });
-
-    setValidationErrors(errors);
-    return errors.length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onValidSubmit = async (data: ReceiptFormValues) => {
     setError(null);
     setValidationErrors([]);
-
-    if (!validateClientSide()) {
-      return;
-    }
-
     setSaving(true);
+
     try {
-      const lineDtos: CreateReceiptLineDto[] = lines.map((l) => ({
+      const lineDtos: CreateReceiptLineDto[] = data.lines.map((l) => ({
         itemId: l.itemId,
         quantityReceived: l.quantityReceived,
         unitCost: l.unitCost,
         taxAmount: l.taxAmount || '0.0000',
-        notes: l.notes.trim() || undefined,
+        notes: l.notes?.trim() || undefined,
       }));
 
       if (isEditMode && receiptId) {
         // Update Header
         await receiptsApi.updateReceiptHeader(receiptId, {
-          warehouseId,
-          supplierId,
-          receiptNumber: receiptNumber.trim() || undefined,
-          receiptDate: receiptDate || undefined,
-          notes: notes.trim() || undefined,
+          warehouseId: data.warehouseId,
+          supplierId: data.supplierId,
+          receiptNumber: data.receiptNumber?.trim() || undefined,
+          receiptDate: data.receiptDate || undefined,
+          notes: data.notes?.trim() || undefined,
         });
 
-        // Reconcile / Replace lines
+        // Replace Lines
         const updated = await receiptsApi.replaceReceiptLines(receiptId, lineDtos);
         onSaved(updated);
       } else {
         // Create new draft
         const createDto: CreateReceiptDto = {
-          warehouseId,
-          supplierId,
-          receiptNumber: receiptNumber.trim() || undefined,
-          receiptDate: receiptDate || undefined,
-          notes: notes.trim() || undefined,
+          warehouseId: data.warehouseId,
+          supplierId: data.supplierId,
+          receiptNumber: data.receiptNumber?.trim() || undefined,
+          receiptDate: data.receiptDate || undefined,
+          notes: data.notes?.trim() || undefined,
           lines: lineDtos,
         };
 
@@ -255,12 +279,23 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
       }
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        if (err.status === 409) {
+          setError(t.receipts.conflictError);
+        } else {
+          setError(translateErrorMessage(err.message, locale));
+        }
         if (err.validationErrors && err.validationErrors.length > 0) {
-          setValidationErrors(err.validationErrors);
+          setValidationErrors(
+            err.validationErrors.map((e) => translateErrorMessage(e, locale)),
+          );
         }
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to save receipt');
+        setError(
+          translateErrorMessage(
+            err instanceof Error ? err.message : 'Failed to save receipt',
+            locale,
+          ),
+        );
       }
     } finally {
       setSaving(false);
@@ -284,8 +319,6 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
       </div>
     );
   }
-
-  const previewTotal = calculatePreviewTotal();
 
   return (
     <div className="receipt-form-container">
@@ -322,21 +355,26 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
         />
       )}
 
-      <form id="receipt-draft-form" onSubmit={handleSubmit} className="receipt-form">
-        {/* Header Information Card */}
+      <form
+        id="receipt-draft-form"
+        onSubmit={handleSubmit(onValidSubmit)}
+        className="receipt-form"
+        noValidate
+      >
+        {/* Header Information Card with Reusable FormField abstractions */}
         <div className="form-card">
           <h3 className="form-section-title">1. Document Header Information</h3>
           <div className="form-grid-3">
-            <div className="form-group">
-              <label htmlFor="warehouse-field" className="form-label form-label-required">
-                {t.receipts.warehouse}
-              </label>
+            <FormField
+              label={t.receipts.warehouse}
+              htmlFor="warehouseId"
+              required
+              error={errors.warehouseId?.message}
+            >
               <select
-                id="warehouse-field"
+                id="warehouseId"
                 className="form-select"
-                value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
-                required
+                {...register('warehouseId')}
                 disabled={saving}
               >
                 <option value="">{t.receipts.selectWarehouse}</option>
@@ -346,18 +384,18 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
                   </option>
                 ))}
               </select>
-            </div>
+            </FormField>
 
-            <div className="form-group">
-              <label htmlFor="supplier-field" className="form-label form-label-required">
-                {t.receipts.supplier}
-              </label>
+            <FormField
+              label={t.receipts.supplier}
+              htmlFor="supplierId"
+              required
+              error={errors.supplierId?.message}
+            >
               <select
-                id="supplier-field"
+                id="supplierId"
                 className="form-select"
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-                required
+                {...register('supplierId')}
                 disabled={saving}
               >
                 <option value="">{t.receipts.selectSupplier}</option>
@@ -367,52 +405,54 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
                   </option>
                 ))}
               </select>
-            </div>
+            </FormField>
 
-            <div className="form-group">
-              <label htmlFor="receipt-date-field" className="form-label form-label-required">
-                {t.receipts.date}
-              </label>
+            <FormField
+              label={t.receipts.date}
+              htmlFor="receiptDate"
+              required
+              error={errors.receiptDate?.message}
+            >
               <input
-                id="receipt-date-field"
+                id="receiptDate"
                 type="date"
                 className="form-input"
-                value={receiptDate}
-                onChange={(e) => setReceiptDate(e.target.value)}
-                required
+                {...register('receiptDate')}
                 disabled={saving}
               />
-            </div>
+            </FormField>
 
-            <div className="form-group">
-              <label htmlFor="receipt-number-field" className="form-label">
-                {t.receipts.receiptNumber} <small>(leave blank for auto-generation)</small>
-              </label>
+            <FormField
+              label={t.receipts.receiptNumber}
+              htmlFor="receiptNumber"
+              helpText="Leave blank for auto-generation"
+              error={errors.receiptNumber?.message}
+            >
               <input
-                id="receipt-number-field"
+                id="receiptNumber"
                 type="text"
                 className="form-input"
-                value={receiptNumber}
-                onChange={(e) => setReceiptNumber(e.target.value)}
                 placeholder="e.g. REC-2026-001"
+                {...register('receiptNumber')}
                 disabled={saving}
               />
-            </div>
+            </FormField>
 
-            <div className="form-group grid-span-2">
-              <label htmlFor="notes-field" className="form-label">
-                {t.receipts.notes}
-              </label>
+            <FormField
+              label={t.receipts.notes}
+              htmlFor="notes"
+              className="grid-span-2"
+              error={errors.notes?.message}
+            >
               <input
-                id="notes-field"
+                id="notes"
                 type="text"
                 className="form-input"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
                 placeholder="Reference delivery note, PO #, bay number..."
+                {...register('notes')}
                 disabled={saving}
               />
-            </div>
+            </FormField>
           </div>
         </div>
 
@@ -429,6 +469,12 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
               {t.receipts.addLine}
             </button>
           </div>
+
+          {errors.lines?.root && (
+            <p className="form-error-text" role="alert" style={{ marginBottom: '0.5rem' }}>
+              {errors.lines.root.message}
+            </p>
+          )}
 
           <div className="table-responsive">
             <table className="data-table lines-table" aria-label="Receipt Lines Entry Table">
@@ -455,20 +501,22 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line, idx) => {
-                  const qty = parseFloat(line.quantityReceived) || 0;
-                  const cost = parseFloat(line.unitCost) || 0;
-                  const linePreviewTotal = Math.round(qty * cost * 10000) / 10000;
+                {fields.map((field, idx) => {
+                  const lineData = watchedLines?.[idx];
+                  const qStr = lineData?.quantityReceived || '0';
+                  const cStr = lineData?.unitCost || '0';
+                  const qNum = parseFloat(qStr) || 0;
+                  const cNum = parseFloat(cStr) || 0;
+                  const linePreview = Math.round(qNum * cNum * 10000) / 10000;
+                  const lineErrors = errors.lines?.[idx];
 
                   return (
-                    <tr key={idx}>
+                    <tr key={field.id}>
                       <td className="text-muted">{idx + 1}</td>
                       <td>
                         <select
-                          className="form-select form-select-sm"
-                          value={line.itemId}
-                          onChange={(e) => handleLineChange(idx, 'itemId', e.target.value)}
-                          required
+                          className={`form-select form-select-sm ${lineErrors?.itemId ? 'has-error' : ''}`}
+                          {...register(`lines.${idx}.itemId`)}
                           disabled={saving}
                           aria-label={`Line ${idx + 1} item selection`}
                         >
@@ -479,42 +527,51 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
                             </option>
                           ))}
                         </select>
+                        {lineErrors?.itemId && (
+                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
+                            {lineErrors.itemId.message}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <input
                           type="number"
                           step="0.0001"
                           min="0.0001"
-                          className="form-input form-input-sm text-end"
-                          value={line.quantityReceived}
-                          onChange={(e) =>
-                            handleLineChange(idx, 'quantityReceived', e.target.value)
-                          }
-                          required
+                          className={`form-input form-input-sm text-end ${lineErrors?.quantityReceived ? 'has-error' : ''}`}
+                          {...register(`lines.${idx}.quantityReceived`)}
                           disabled={saving}
                           aria-label={`Line ${idx + 1} quantity`}
                         />
+                        {lineErrors?.quantityReceived && (
+                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
+                            {lineErrors.quantityReceived.message}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <input
                           type="number"
                           step="0.0001"
                           min="0.0000"
-                          className="form-input form-input-sm text-end"
-                          value={line.unitCost}
-                          onChange={(e) => handleLineChange(idx, 'unitCost', e.target.value)}
-                          required
+                          className={`form-input form-input-sm text-end ${lineErrors?.unitCost ? 'has-error' : ''}`}
+                          {...register(`lines.${idx}.unitCost`)}
                           disabled={saving}
                           aria-label={`Line ${idx + 1} unit cost`}
                         />
+                        {lineErrors?.unitCost && (
+                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
+                            {lineErrors.unitCost.message}
+                          </span>
+                        )}
                       </td>
-                      <td className="text-end font-mono">{formatCurrency(linePreviewTotal)}</td>
+                      <td className="text-end font-mono">{formatCurrency(linePreview)}</td>
                       <td className="text-center">
                         <button
                           type="button"
                           className="btn-icon-danger"
                           onClick={() => handleRemoveLine(idx)}
-                          disabled={lines.length <= 1 || saving}
+                          disabled={fields.length <= 1 || saving}
                           aria-label={`Remove line ${idx + 1}`}
                           title={t.receipts.removeLine}
                         >
@@ -530,7 +587,7 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
 
           {/* Form Totals Summary */}
           <div className="form-totals-summary">
-            <span className="totals-label">{t.receipts.totalAmount} (Client Preview):</span>
+            <span className="totals-label">{t.receipts.totalAmount} (Safe Decimal Preview):</span>
             <strong className="totals-amount">{formatCurrency(previewTotal)}</strong>
           </div>
         </div>

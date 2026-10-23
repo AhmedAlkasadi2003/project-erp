@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { StockBalanceService } from './stock-balance.service';
+import { StockBalanceRepository } from './repositories/stock-balance.repository';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('StockBalanceService (Unit)', () => {
@@ -38,7 +39,11 @@ describe('StockBalanceService (Unit)', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [StockBalanceService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        StockBalanceService,
+        StockBalanceRepository,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
     }).compile();
 
     service = module.get<StockBalanceService>(StockBalanceService);

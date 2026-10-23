@@ -1,17 +1,7 @@
 import { apiClient } from './client';
+import { HealthResponse } from '../types';
 
-export interface HealthResponse {
-  status: 'ok' | 'degraded';
-  timestamp: string;
-  uptime: number;
-  environment: string;
-  version: string;
-  services: {
-    database: {
-      status: 'up' | 'down';
-    };
-  };
-}
+export type { HealthResponse };
 
 export async function fetchBackendHealth(): Promise<HealthResponse> {
   return apiClient<HealthResponse>('health');

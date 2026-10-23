@@ -1,19 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { Company, LoginCredentials, User } from '../types';
+import { AuthContextType, Company, LoginCredentials, User } from '../types';
 import * as authApi from '../api/auth';
 import { getStoredToken, setOnUnauthorizedCallback, setStoredToken } from '../api/client';
-
-interface AuthContextType {
-  user: User | null;
-  company: Company | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  loading: boolean;
-  error: string | null;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => void;
-  clearError: () => void;
-}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

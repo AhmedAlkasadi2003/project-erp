@@ -7,6 +7,7 @@ import { Alert } from '../common/Alert';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { PostReceiptModal } from './PostReceiptModal';
 import { VoidReceiptModal } from './VoidReceiptModal';
+import { translateErrorMessage } from '../../i18n/errorTranslator';
 import * as receiptsApi from '../../api/receipts';
 
 interface ReceiptDetailsProps {
@@ -22,7 +23,7 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
   onEdit,
   onReceiptDeleted,
 }) => {
-  const { t, formatCurrency, formatDate, formatQuantity } = useLocale();
+  const { t, locale, formatCurrency, formatDate, formatQuantity } = useLocale();
 
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -42,11 +43,16 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
       const data = await receiptsApi.getReceiptById(receiptId);
       setReceipt(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch receipt details');
+      setError(
+        translateErrorMessage(
+          err instanceof Error ? err.message : 'Failed to fetch receipt details',
+          locale,
+        ),
+      );
     } finally {
       setLoading(false);
     }
-  }, [receiptId]);
+  }, [receiptId, locale]);
 
   useEffect(() => {
     void fetchReceipt();
@@ -59,7 +65,12 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
       await receiptsApi.deleteReceipt(receipt.id);
       onReceiptDeleted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete receipt');
+      setError(
+        translateErrorMessage(
+          err instanceof Error ? err.message : 'Failed to delete receipt',
+          locale,
+        ),
+      );
       setShowDeleteModal(false);
     } finally {
       setDeleting(false);
@@ -287,9 +298,9 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
         onClose={() => setShowPostModal(false)}
         onSuccess={(updated) => {
           setReceipt(updated);
-          setSuccessMessage(t.common.success);
+          setSuccessMessage(t.receipts.postedSuccess);
         }}
-        onError={(err) => setError(err)}
+        onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
       {/* Void Modal */}
@@ -299,9 +310,9 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
         onClose={() => setShowVoidModal(false)}
         onSuccess={(updated) => {
           setReceipt(updated);
-          setSuccessMessage(t.common.success);
+          setSuccessMessage(t.receipts.voidedSuccess);
         }}
-        onError={(err) => setError(err)}
+        onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
       {/* Delete Draft Modal */}

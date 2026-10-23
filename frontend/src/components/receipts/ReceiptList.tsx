@@ -16,6 +16,7 @@ import { Alert } from '../common/Alert';
 import { ConfirmModal } from '../common/ConfirmModal';
 import { PostReceiptModal } from './PostReceiptModal';
 import { VoidReceiptModal } from './VoidReceiptModal';
+import { translateErrorMessage } from '../../i18n/errorTranslator';
 import * as receiptsApi from '../../api/receipts';
 import * as referencesApi from '../../api/references';
 
@@ -25,19 +26,70 @@ interface ReceiptListProps {
   onCreateNew: () => void;
 }
 
+const getUrlParams = () => {
+  if (typeof window === 'undefined') return {};
+  const sp = new URLSearchParams(window.location.search);
+  return {
+    search: sp.get('search') || '',
+    status: sp.get('status') || '',
+    warehouseId: sp.get('warehouseId') || '',
+    supplierId: sp.get('supplierId') || '',
+    startDate: sp.get('startDate') || '',
+    endDate: sp.get('endDate') || '',
+    sortBy:
+      (sp.get('sortBy') as 'receiptDate' | 'receiptNumber' | 'totalAmount' | 'createdAt') ||
+      'createdAt',
+    sortOrder: (sp.get('sortOrder') as 'asc' | 'desc') || 'desc',
+    page: parseInt(sp.get('page') || '1', 10) || 1,
+    limit: parseInt(sp.get('limit') || '10', 10) || 10,
+  };
+};
+
+const updateUrlParams = (params: {
+  search?: string;
+  status?: string;
+  warehouseId?: string;
+  supplierId?: string;
+  startDate?: string;
+  endDate?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  page?: number;
+  limit?: number;
+}) => {
+  if (typeof window === 'undefined') return;
+  const sp = new URLSearchParams();
+  if (params.search?.trim()) sp.set('search', params.search.trim());
+  if (params.status) sp.set('status', params.status);
+  if (params.warehouseId) sp.set('warehouseId', params.warehouseId);
+  if (params.supplierId) sp.set('supplierId', params.supplierId);
+  if (params.startDate) sp.set('startDate', params.startDate);
+  if (params.endDate) sp.set('endDate', params.endDate);
+  if (params.sortBy && params.sortBy !== 'createdAt') sp.set('sortBy', params.sortBy);
+  if (params.sortOrder && params.sortOrder !== 'desc') sp.set('sortOrder', params.sortOrder);
+  if (params.page && params.page > 1) sp.set('page', String(params.page));
+  if (params.limit && params.limit !== 10) sp.set('limit', String(params.limit));
+
+  const queryStr = sp.toString();
+  const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
+  window.history.replaceState(null, '', newUrl);
+};
+
 export const ReceiptList: React.FC<ReceiptListProps> = ({
   onSelectReceipt,
   onEditReceipt,
   onCreateNew,
 }) => {
   const { user } = useAuth();
-  const { t, formatCurrency, formatDate } = useLocale();
+  const { t, locale, formatCurrency, formatDate } = useLocale();
+
+  const initialParams = getUrlParams();
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [meta, setMeta] = useState<PaginationMeta>({
     total: 0,
-    page: 1,
-    limit: 10,
+    page: initialParams.page || 1,
+    limit: initialParams.limit || 10,
     totalPages: 1,
     hasNextPage: false,
     hasPrevPage: false,
@@ -50,17 +102,17 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Filter states
-  const [search, setSearch] = useState<string>('');
-  const [status, setStatus] = useState<string>('');
-  const [warehouseId, setWarehouseId] = useState<string>('');
-  const [supplierId, setSupplierId] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  // Filter states initialized from URL search params
+  const [search, setSearch] = useState<string>(initialParams.search || '');
+  const [status, setStatus] = useState<string>(initialParams.status || '');
+  const [warehouseId, setWarehouseId] = useState<string>(initialParams.warehouseId || '');
+  const [supplierId, setSupplierId] = useState<string>(initialParams.supplierId || '');
+  const [startDate, setStartDate] = useState<string>(initialParams.startDate || '');
+  const [endDate, setEndDate] = useState<string>(initialParams.endDate || '');
   const [sortBy, setSortBy] = useState<
     'receiptDate' | 'receiptNumber' | 'totalAmount' | 'createdAt'
-  >('createdAt');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  >(initialParams.sortBy || 'createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialParams.sortOrder || 'desc');
 
   // Modal states
   const [postTarget, setPostTarget] = useState<Receipt | null>(null);
@@ -104,8 +156,27 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         const res = await receiptsApi.getReceipts(params);
         setReceipts(res.data);
         setMeta(res.meta);
+
+        // Sync active query filters and pagination to the browser URL
+        updateUrlParams({
+          search,
+          status,
+          warehouseId,
+          supplierId,
+          startDate,
+          endDate,
+          sortBy,
+          sortOrder,
+          page: pageToLoad,
+          limit: limitToLoad,
+        });
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load receipts');
+        setError(
+          translateErrorMessage(
+            err instanceof Error ? err.message : 'Failed to load receipts',
+            locale,
+          ),
+        );
       } finally {
         setLoading(false);
       }
@@ -121,12 +192,31 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
       supplierId,
       startDate,
       endDate,
+      locale,
     ],
   );
 
   useEffect(() => {
     void loadReferences();
   }, [loadReferences]);
+
+  // Listen to browser Back/Forward navigation to restore filters seamlessly
+  useEffect(() => {
+    const handlePopState = () => {
+      const p = getUrlParams();
+      setSearch(p.search || '');
+      setStatus(p.status || '');
+      setWarehouseId(p.warehouseId || '');
+      setSupplierId(p.supplierId || '');
+      setStartDate(p.startDate || '');
+      setEndDate(p.endDate || '');
+      setSortBy(p.sortBy || 'createdAt');
+      setSortOrder(p.sortOrder || 'desc');
+      void loadReceipts(p.page || 1, p.limit || 10);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [loadReceipts]);
 
   useEffect(() => {
     void loadReceipts(1, meta.limit);
@@ -147,6 +237,7 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
     setEndDate('');
     setSortBy('createdAt');
     setSortOrder('desc');
+    updateUrlParams({});
     void loadReceipts(1, meta.limit);
   };
 
@@ -156,10 +247,15 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
     try {
       await receiptsApi.deleteReceipt(deleteTarget.id);
       setDeleteTarget(null);
-      setSuccessMessage(t.common.success);
+      setSuccessMessage(t.receipts.deletedSuccess);
       void loadReceipts(meta.page, meta.limit);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete receipt');
+      setError(
+        translateErrorMessage(
+          err instanceof Error ? err.message : 'Failed to delete receipt',
+          locale,
+        ),
+      );
     } finally {
       setDeleting(false);
     }
@@ -462,10 +558,10 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         isOpen={!!postTarget}
         onClose={() => setPostTarget(null)}
         onSuccess={(updated) => {
-          setSuccessMessage(`${t.common.success} (${updated.receiptNumber})`);
+          setSuccessMessage(`${t.receipts.postedSuccess} (${updated.receiptNumber})`);
           void loadReceipts(meta.page, meta.limit);
         }}
-        onError={(err) => setError(err)}
+        onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
       {/* Void Receipt Modal */}
@@ -474,10 +570,10 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         isOpen={!!voidTarget}
         onClose={() => setVoidTarget(null)}
         onSuccess={(updated) => {
-          setSuccessMessage(`${t.common.success} (${updated.receiptNumber})`);
+          setSuccessMessage(`${t.receipts.voidedSuccess} (${updated.receiptNumber})`);
           void loadReceipts(meta.page, meta.limit);
         }}
-        onError={(err) => setError(err)}
+        onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
       {/* Delete Draft Modal */}

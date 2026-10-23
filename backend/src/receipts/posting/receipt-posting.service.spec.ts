@@ -3,6 +3,8 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test, TestingModule } from '@nestjs/testing';
 import { IdempotencyStatus, JournalEntryStatus, Prisma, ReceiptStatus } from '@prisma/client';
 import { ReceiptPostingService } from './receipt-posting.service';
+import { ReceiptJournalBuilderService } from './receipt-journal-builder.service';
+import { ReceiptVoidWorkflowService } from './receipt-void-workflow.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryLedgerService } from '../../inventory/inventory-ledger.service';
 import { StockBalanceService } from '../../inventory/stock-balance.service';
@@ -103,6 +105,8 @@ describe('ReceiptPostingService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReceiptPostingService,
+        ReceiptJournalBuilderService,
+        ReceiptVoidWorkflowService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: InventoryLedgerService, useValue: mockInventoryLedger },
         { provide: StockBalanceService, useValue: mockStockBalanceService },

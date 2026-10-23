@@ -4,10 +4,10 @@ import { AppView } from '../types';
 import { Alert } from '../components/Alert';
 
 interface MainLayoutProps {
-  currentView: AppView;
-  onNavigate: (view: AppView) => void;
-  notification: { type: 'success' | 'error' | 'warning' | 'info'; message: string } | null;
-  onDismissNotification: () => void;
+  currentView?: AppView;
+  onNavigate?: (view: AppView) => void;
+  notification?: { type: 'success' | 'error' | 'warning' | 'info'; message: string } | null;
+  onDismissNotification?: () => void;
   children: React.ReactNode;
 }
 
@@ -27,7 +27,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             <Alert
               type={notification.type}
               message={notification.message}
-              onClose={onDismissNotification}
+              onClose={onDismissNotification || (() => {})}
             />
           </div>
         )}

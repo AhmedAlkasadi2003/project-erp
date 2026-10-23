@@ -1,25 +1,40 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useLocale } from '../hooks/useLocale';
 import { AppView } from '../types';
-import { getAuthorizedNavItems } from '../utils/navigation';
+import { getAuthorizedNavItems, getPathForView } from '../utils/navigation';
 
 export type { AppView };
 
 interface NavbarProps {
-  currentView: AppView;
-  onNavigate: (view: AppView) => void;
+  currentView?: AppView;
+  onNavigate?: (view: AppView) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
   const { user, company, logout } = useAuth();
   const { locale, setLocale, t } = useLocale();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleLanguage = () => {
     setLocale(locale === 'en' ? 'ar' : 'en');
   };
 
   const authorizedItems = getAuthorizedNavItems(user?.role);
+
+  const handleNavClick = (id: AppView, path: string) => {
+    if (onNavigate) {
+      onNavigate(id);
+    }
+    navigate(path);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <header className="app-navbar" role="banner">
@@ -34,17 +49,23 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
 
         <nav className="navbar-links" aria-label="Main Navigation">
           {authorizedItems.map((item) => {
+            const itemPath = item.path || getPathForView(item.id);
             const isActive =
-              currentView === item.id ||
+              location.pathname === itemPath ||
               (item.id === 'receipts' &&
-                (currentView === 'receipt-details' || currentView === 'edit-receipt'));
+                (location.pathname === '/receipts' ||
+                  location.pathname.startsWith('/receipts/') ||
+                  currentView === 'receipts' ||
+                  currentView === 'receipt-details' ||
+                  currentView === 'edit-receipt')) ||
+              currentView === item.id;
 
             return (
               <button
                 key={item.id}
                 type="button"
                 className={`nav-link ${isActive ? 'active' : ''}`}
-                onClick={() => onNavigate(item.id)}
+                onClick={() => handleNavClick(item.id, itemPath)}
                 aria-current={isActive ? 'page' : undefined}
               >
                 {t.nav[item.labelKey]}
@@ -74,7 +95,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate }) => {
               <button
                 type="button"
                 className="btn btn-sm btn-outline btn-logout"
-                onClick={logout}
+                onClick={handleLogout}
                 aria-label={t.login.logout}
               >
                 {t.login.logout}

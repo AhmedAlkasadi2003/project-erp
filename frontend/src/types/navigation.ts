@@ -14,6 +14,7 @@ export type AppView =
 
 export interface NavItemConfig {
   id: AppView;
+  path: string;
   labelKey: keyof Translations['nav'];
   allowedRoles: UserRole[];
   category?: 'inventory' | 'finance' | 'system';

@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { LocaleProvider, useLocale } from './hooks/useLocale';
 import { MainLayout } from './layouts/MainLayout';
 import { RouteGuard } from './components/RouteGuard';
-import { canUserAccessView } from './utils/navigation';
-import { AppView } from './types';
 import {
   LoginPage,
   ReceiptsPage,
@@ -21,64 +20,19 @@ const AppContent: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
   const { t } = useLocale();
 
-  const [currentView, setCurrentView] = useState<AppView>('receipts');
-  const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{
     type: 'success' | 'error' | 'info' | 'warning';
     message: string;
   } | null>(null);
 
-  // Active view guard: redirect to default authorized view if role lacks permission
-  useEffect(() => {
-    if (user && !canUserAccessView(user.role, currentView)) {
-      setCurrentView('receipts');
-      setSelectedReceiptId(null);
-    }
-  }, [user, currentView]);
-
-  const handleNavigate = (view: AppView) => {
-    if (user && !canUserAccessView(user.role, view)) {
-      setNotification({
-        type: 'warning',
-        message: t.receipts.permissionDenied,
-      });
-      return;
-    }
-    setCurrentView(view);
-    if (view !== 'edit-receipt' && view !== 'receipt-details') {
-      setSelectedReceiptId(null);
-    }
-  };
-
-  const handleSelectReceipt = (receiptId: string) => {
-    setSelectedReceiptId(receiptId);
-    setCurrentView('receipt-details');
-  };
-
-  const handleEditReceipt = (receiptId: string) => {
-    setSelectedReceiptId(receiptId);
-    setCurrentView('edit-receipt');
-  };
-
-  const handleCreateNew = () => {
-    setSelectedReceiptId(null);
-    setCurrentView('create-receipt');
-  };
-
   const handleSavedReceipt = (receipt: { id: string; receiptNumber?: string }) => {
-    const isEdit = Boolean(selectedReceiptId);
-    setSelectedReceiptId(receipt.id);
-    setCurrentView('receipt-details');
-    const msg = isEdit ? t.receipts.updatedSuccess : t.receipts.createdSuccess;
     setNotification({
       type: 'success',
-      message: `${msg} (${receipt.receiptNumber || receipt.id})`,
+      message: `${t.receipts.createdSuccess} (${receipt.receiptNumber || receipt.id})`,
     });
   };
 
   const handleReceiptDeleted = () => {
-    setSelectedReceiptId(null);
-    setCurrentView('receipts');
     setNotification({
       type: 'success',
       message: t.receipts.deletedSuccess,
@@ -91,83 +45,117 @@ const AppContent: React.FC = () => {
 
   return (
     <MainLayout
-      currentView={currentView}
-      onNavigate={handleNavigate}
       notification={notification}
       onDismissNotification={() => setNotification(null)}
     >
-      {(currentView === 'receipts' ||
-        currentView === 'receipt-details' ||
-        currentView === 'edit-receipt') && (
-        <RouteGuard view={currentView} role={user.role}>
-          <ReceiptsPage
-            subView={
-              currentView === 'receipt-details'
-                ? 'details'
-                : currentView === 'edit-receipt'
-                  ? 'edit'
-                  : 'list'
-            }
-            selectedReceiptId={selectedReceiptId}
-            onSelectReceipt={handleSelectReceipt}
-            onEditReceipt={handleEditReceipt}
-            onCreateNew={handleCreateNew}
-            onSavedReceipt={handleSavedReceipt}
-            onReceiptDeleted={handleReceiptDeleted}
-            onBackToList={() => handleNavigate('receipts')}
-          />
-        </RouteGuard>
-      )}
+      <Routes>
+        <Route path="/" element={<Navigate to="/receipts" replace />} />
 
-      {currentView === 'create-receipt' && (
-        <RouteGuard view="create-receipt" role={user.role}>
-          <CreateReceiptPage
-            onSaved={handleSavedReceipt}
-            onCancel={() => handleNavigate('receipts')}
-          />
-        </RouteGuard>
-      )}
+        {/* Inventory Views */}
+        <Route
+          path="/receipts"
+          element={
+            <RouteGuard view="receipts" role={user.role}>
+              <ReceiptsPage
+                subView="list"
+                onSavedReceipt={handleSavedReceipt}
+                onReceiptDeleted={handleReceiptDeleted}
+              />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/receipts/new"
+          element={
+            <RouteGuard view="create-receipt" role={user.role}>
+              <CreateReceiptPage onSaved={handleSavedReceipt} />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/receipts/:id"
+          element={
+            <RouteGuard view="receipt-details" role={user.role}>
+              <ReceiptsPage
+                subView="details"
+                onSavedReceipt={handleSavedReceipt}
+                onReceiptDeleted={handleReceiptDeleted}
+              />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/receipts/:id/edit"
+          element={
+            <RouteGuard view="edit-receipt" role={user.role}>
+              <ReceiptsPage
+                subView="edit"
+                onSavedReceipt={handleSavedReceipt}
+              />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/stock-card"
+          element={
+            <RouteGuard view="stock-card" role={user.role}>
+              <StockCardPage />
+            </RouteGuard>
+          }
+        />
 
-      {currentView === 'stock-card' && (
-        <RouteGuard view="stock-card" role={user.role}>
-          <StockCardPage />
-        </RouteGuard>
-      )}
+        {/* Finance Views */}
+        <Route
+          path="/chart-of-accounts"
+          element={
+            <RouteGuard view="chart-of-accounts" role={user.role}>
+              <ChartOfAccountsPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/accounting-periods"
+          element={
+            <RouteGuard view="accounting-periods" role={user.role}>
+              <AccountingPeriodsPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/trial-balance"
+          element={
+            <RouteGuard view="trial-balance" role={user.role}>
+              <TrialBalancePage />
+            </RouteGuard>
+          }
+        />
 
-      {currentView === 'chart-of-accounts' && (
-        <RouteGuard view="chart-of-accounts" role={user.role}>
-          <ChartOfAccountsPage />
-        </RouteGuard>
-      )}
+        {/* System Views */}
+        <Route
+          path="/audit-trail"
+          element={
+            <RouteGuard view="audit-trail" role={user.role}>
+              <AuditTrailPage />
+            </RouteGuard>
+          }
+        />
 
-      {currentView === 'accounting-periods' && (
-        <RouteGuard view="accounting-periods" role={user.role}>
-          <AccountingPeriodsPage />
-        </RouteGuard>
-      )}
-
-      {currentView === 'trial-balance' && (
-        <RouteGuard view="trial-balance" role={user.role}>
-          <TrialBalancePage />
-        </RouteGuard>
-      )}
-
-      {currentView === 'audit-trail' && (
-        <RouteGuard view="audit-trail" role={user.role}>
-          <AuditTrailPage />
-        </RouteGuard>
-      )}
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/receipts" replace />} />
+      </Routes>
     </MainLayout>
   );
 };
 
 export const App: React.FC = () => {
   return (
-    <LocaleProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </LocaleProvider>
+    <BrowserRouter>
+      <LocaleProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </LocaleProvider>
+    </BrowserRouter>
   );
 };
 

@@ -1,17 +1,19 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { LocaleProvider } from '../context/LocaleContext';
-import { AuthProvider } from '../context/AuthContext';
-import { StockCardView } from '../components/inventory/StockCardView';
-import { ChartOfAccountsView } from '../components/accounting/ChartOfAccountsView';
-import { AccountingPeriodsView } from '../components/accounting/AccountingPeriodsView';
-import { TrialBalanceView } from '../components/accounting/TrialBalanceView';
-import { AuditTrailView } from '../components/audit/AuditTrailView';
-import * as inventoryApi from '../api/inventory';
-import * as referencesApi from '../api/references';
-import * as accountingApi from '../api/accounting';
-import * as authApi from '../api/auth';
+import { LocaleProvider } from '../store/LocaleContext';
+import { AuthProvider } from '../store/AuthContext';
+import { StockCardView } from '../features/inventory/StockCardView';
+import { ChartOfAccountsView } from '../features/accounting/ChartOfAccountsView';
+import { AccountingPeriodsView } from '../features/accounting/AccountingPeriodsView';
+import { TrialBalanceView } from '../features/accounting/TrialBalanceView';
+import { AuditTrailView } from '../features/audit/AuditTrailView';
+import * as inventoryApi from '../services/stock-card';
+import * as chartOfAccountsApi from '../services/chart-of-accounts';
+import * as accountingPeriodsApi from '../services/accounting-periods';
+import * as trialBalanceApi from '../services/trial-balance';
+import * as referencesApi from '../services/references';
+import * as authApi from '../services/auth';
 
 const renderWithProviders = (ui: React.ReactElement) => {
   return render(
@@ -107,7 +109,7 @@ describe('Enterprise Views & Role Permissions', () => {
 
   describe('ChartOfAccountsView', () => {
     it('renders list of accounts and GRN clearing badge', async () => {
-      vi.spyOn(accountingApi, 'getAccounts').mockResolvedValue({
+      vi.spyOn(chartOfAccountsApi, 'getAccounts').mockResolvedValue({
         data: [
           {
             id: 'acc-1',
@@ -123,7 +125,7 @@ describe('Enterprise Views & Role Permissions', () => {
         meta: { total: 1, page: 1, limit: 100, totalPages: 1, hasNextPage: false, hasPrevPage: false },
       });
 
-      vi.spyOn(accountingApi, 'getInventoryAccountsConfig').mockResolvedValue({
+      vi.spyOn(chartOfAccountsApi, 'getInventoryAccountsConfig').mockResolvedValue({
         companyId: 'comp-1',
         companyCode: 'COMP-01',
         companyName: 'Acme Corp',
@@ -150,7 +152,7 @@ describe('Enterprise Views & Role Permissions', () => {
 
   describe('AccountingPeriodsView', () => {
     it('renders periods list and status', async () => {
-      vi.spyOn(accountingApi, 'getAccountingPeriods').mockResolvedValue({
+      vi.spyOn(accountingPeriodsApi, 'getAccountingPeriods').mockResolvedValue({
         data: [
           {
             id: 'per-1',
@@ -175,7 +177,7 @@ describe('Enterprise Views & Role Permissions', () => {
 
   describe('TrialBalanceView & AuditTrailView Permissions', () => {
     it('renders trial balance and reconciliation when user is Accountant or Admin', async () => {
-      vi.spyOn(accountingApi, 'getTrialBalance').mockResolvedValue({
+      vi.spyOn(trialBalanceApi, 'getTrialBalance').mockResolvedValue({
         asOfDate: '2026-10-22',
         periodId: null,
         accounts: [
@@ -205,7 +207,7 @@ describe('Enterprise Views & Role Permissions', () => {
         isBalanced: true,
       });
 
-      vi.spyOn(accountingApi, 'getGlSubledgerReconciliation').mockResolvedValue({
+      vi.spyOn(trialBalanceApi, 'getGlSubledgerReconciliation').mockResolvedValue({
         asOfDate: '2026-10-22',
         subledgerTotalValue: '1000.0000',
         glInventoryAssetTotal: '1000.0000',

@@ -1,21 +1,21 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { ReceiptList } from '../components/receipts/ReceiptList';
-import { ReceiptForm } from '../components/receipts/ReceiptForm';
-import { ReceiptDetails } from '../components/receipts/ReceiptDetails';
-import { PostReceiptModal } from '../components/receipts/PostReceiptModal';
-import { VoidReceiptModal } from '../components/receipts/VoidReceiptModal';
-import { AuthProvider } from '../context/AuthContext';
-import { LocaleProvider } from '../context/LocaleContext';
-import * as receiptsApi from '../api/receipts';
-import * as referencesApi from '../api/references';
-import * as authApi from '../api/auth';
+import { ReceiptList } from '../features/receipts/ReceiptList';
+import { ReceiptForm } from '../features/receipts/ReceiptForm';
+import { ReceiptDetails } from '../features/receipts/ReceiptDetails';
+import { PostReceiptModal } from '../features/receipts/PostReceiptModal';
+import { VoidReceiptModal } from '../features/receipts/VoidReceiptModal';
+import { AuthProvider } from '../store/AuthContext';
+import { LocaleProvider } from '../store/LocaleContext';
+import * as receiptsApi from '../services/receipts';
+import * as referencesApi from '../services/references';
+import * as authApi from '../services/auth';
 import { Receipt } from '../types';
 
-vi.mock('../api/receipts');
-vi.mock('../api/references');
-vi.mock('../api/auth');
+vi.mock('../services/receipts');
+vi.mock('../services/references');
+vi.mock('../services/auth');
 
 const mockReceipt: Receipt = {
   id: 'rec-1',

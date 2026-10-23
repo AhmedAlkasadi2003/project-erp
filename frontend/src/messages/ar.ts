@@ -26,7 +26,6 @@ export const ar: Translations = {
     accountingPeriods: 'الفترات المالية',
     trialBalance: 'ميزان المراجعة',
     auditTrail: 'سجل التدقيق',
-    systemHealth: 'حالة النظام',
     userProfile: 'الملف الشخصي',
   },
   roles: {

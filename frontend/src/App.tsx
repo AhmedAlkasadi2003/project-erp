@@ -1,24 +1,27 @@
-import React, { useState } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { LocaleProvider, useLocale } from './context/LocaleContext';
-import { Navbar, AppView } from './components/layout/Navbar';
-import { LoginForm } from './components/auth/LoginForm';
-import { ReceiptList } from './components/receipts/ReceiptList';
-import { ReceiptForm } from './components/receipts/ReceiptForm';
-import { ReceiptDetails } from './components/receipts/ReceiptDetails';
-import { StockCardView } from './components/inventory/StockCardView';
-import { ChartOfAccountsView } from './components/accounting/ChartOfAccountsView';
-import { AccountingPeriodsView } from './components/accounting/AccountingPeriodsView';
-import { TrialBalanceView } from './components/accounting/TrialBalanceView';
-import { AuditTrailView } from './components/audit/AuditTrailView';
-import { SystemHealth } from './components/system/SystemHealth';
-import { Alert } from './components/common/Alert';
-import { canUserAccessView } from './config/navigation';
+import React, { useState, useEffect } from 'react';
+import { AuthProvider } from './store/AuthContext';
+import { LocaleProvider } from './store/LocaleContext';
+import { useAuth } from './hooks/useAuth';
+import { useLocale } from './hooks/useLocale';
+import { MainLayout } from './layouts/MainLayout';
+import { RouteGuard } from './routes/RouteGuard';
+import { canUserAccessView } from './routes/navigation';
+import { AppView } from './types';
+import {
+  LoginPage,
+  ReceiptsPage,
+  CreateReceiptPage,
+  StockCardPage,
+  ChartOfAccountsPage,
+  AccountingPeriodsPage,
+  TrialBalancePage,
+  AuditTrailPage,
+} from './pages';
 import './App.css';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, user } = useAuth();
-  const { t, locale, setLocale } = useLocale();
+  const { t } = useLocale();
 
   const [currentView, setCurrentView] = useState<AppView>('receipts');
   const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
@@ -28,7 +31,7 @@ const AppContent: React.FC = () => {
   } | null>(null);
 
   // Active view guard: redirect to default authorized view if role lacks permission
-  React.useEffect(() => {
+  useEffect(() => {
     if (user && !canUserAccessView(user.role, currentView)) {
       setCurrentView('receipts');
       setSelectedReceiptId(null);
@@ -84,83 +87,79 @@ const AppContent: React.FC = () => {
     });
   };
 
-  return (
-    <div className="app-layout">
-      {isAuthenticated && user ? (
-        <>
-          <Navbar currentView={currentView} onNavigate={handleNavigate} />
-          <main className="app-main-content">
-            {notification && (
-              <div style={{ marginBottom: '1.25rem' }}>
-                <Alert
-                  type={notification.type}
-                  message={notification.message}
-                  onClose={() => setNotification(null)}
-                />
-              </div>
-            )}
-            {currentView === 'receipts' && (
-              <ReceiptList
-                onSelectReceipt={handleSelectReceipt}
-                onEditReceipt={handleEditReceipt}
-                onCreateNew={handleCreateNew}
-              />
-            )}
-            {currentView === 'create-receipt' && (
-              <ReceiptForm
-                onSaved={handleSavedReceipt}
-                onCancel={() => handleNavigate('receipts')}
-              />
-            )}
-            {currentView === 'edit-receipt' && selectedReceiptId && (
-              <ReceiptForm
-                receiptId={selectedReceiptId}
-                onSaved={handleSavedReceipt}
-                onCancel={() => handleNavigate('receipt-details')}
-              />
-            )}
-            {currentView === 'receipt-details' && selectedReceiptId && (
-              <ReceiptDetails
-                receiptId={selectedReceiptId}
-                onBack={() => handleNavigate('receipts')}
-                onEdit={handleEditReceipt}
-                onReceiptDeleted={handleReceiptDeleted}
-              />
-            )}
-            {currentView === 'stock-card' && <StockCardView />}
-            {currentView === 'chart-of-accounts' && <ChartOfAccountsView />}
-            {currentView === 'accounting-periods' && <AccountingPeriodsView />}
-            {currentView === 'trial-balance' && <TrialBalanceView />}
-            {currentView === 'audit-trail' && <AuditTrailView />}
-            {currentView === 'health' && <SystemHealth />}
-          </main>
-        </>
-      ) : (
-        <div className="workspace-container">
-          <header className="workspace-header">
-            <div className="header-top-row">
-              <div className="badge">Phase 01 — Workspace Setup</div>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost language-toggle"
-                onClick={() => setLocale(locale === 'en' ? 'ar' : 'en')}
-                aria-label={`Switch language to ${locale === 'en' ? 'Arabic' : 'English'}`}
-              >
-                🌐 {locale === 'en' ? 'العربية' : 'English'}
-              </button>
-            </div>
-            <h1>Inventory Receipts ERP</h1>
-            <p className="subtitle">
-              Core development workspace & infrastructure verification shell
-            </p>
-          </header>
+  if (!isAuthenticated || !user) {
+    return <LoginPage />;
+  }
 
-          <main className="workspace-main">
-            <LoginForm />
-          </main>
-        </div>
+  return (
+    <MainLayout
+      currentView={currentView}
+      onNavigate={handleNavigate}
+      notification={notification}
+      onDismissNotification={() => setNotification(null)}
+    >
+      {(currentView === 'receipts' ||
+        currentView === 'receipt-details' ||
+        currentView === 'edit-receipt') && (
+        <RouteGuard view={currentView} role={user.role}>
+          <ReceiptsPage
+            subView={
+              currentView === 'receipt-details'
+                ? 'details'
+                : currentView === 'edit-receipt'
+                  ? 'edit'
+                  : 'list'
+            }
+            selectedReceiptId={selectedReceiptId}
+            onSelectReceipt={handleSelectReceipt}
+            onEditReceipt={handleEditReceipt}
+            onCreateNew={handleCreateNew}
+            onSavedReceipt={handleSavedReceipt}
+            onReceiptDeleted={handleReceiptDeleted}
+            onBackToList={() => handleNavigate('receipts')}
+          />
+        </RouteGuard>
       )}
-    </div>
+
+      {currentView === 'create-receipt' && (
+        <RouteGuard view="create-receipt" role={user.role}>
+          <CreateReceiptPage
+            onSaved={handleSavedReceipt}
+            onCancel={() => handleNavigate('receipts')}
+          />
+        </RouteGuard>
+      )}
+
+      {currentView === 'stock-card' && (
+        <RouteGuard view="stock-card" role={user.role}>
+          <StockCardPage />
+        </RouteGuard>
+      )}
+
+      {currentView === 'chart-of-accounts' && (
+        <RouteGuard view="chart-of-accounts" role={user.role}>
+          <ChartOfAccountsPage />
+        </RouteGuard>
+      )}
+
+      {currentView === 'accounting-periods' && (
+        <RouteGuard view="accounting-periods" role={user.role}>
+          <AccountingPeriodsPage />
+        </RouteGuard>
+      )}
+
+      {currentView === 'trial-balance' && (
+        <RouteGuard view="trial-balance" role={user.role}>
+          <TrialBalancePage />
+        </RouteGuard>
+      )}
+
+      {currentView === 'audit-trail' && (
+        <RouteGuard view="audit-trail" role={user.role}>
+          <AuditTrailPage />
+        </RouteGuard>
+      )}
+    </MainLayout>
   );
 };
 

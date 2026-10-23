@@ -1,19 +1,19 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { FormField } from '../components/common/FormField';
-import { ReceiptForm } from '../components/receipts/ReceiptForm';
-import { ReceiptList } from '../components/receipts/ReceiptList';
-import { AuthProvider } from '../context/AuthContext';
-import { LocaleProvider } from '../context/LocaleContext';
-import * as receiptsApi from '../api/receipts';
-import * as referencesApi from '../api/references';
-import * as authApi from '../api/auth';
-import { ApiError } from '../api/client';
+import { FormField } from '../components/FormField';
+import { ReceiptForm } from '../features/receipts/ReceiptForm';
+import { ReceiptList } from '../features/receipts/ReceiptList';
+import { AuthProvider } from '../store/AuthContext';
+import { LocaleProvider } from '../store/LocaleContext';
+import * as receiptsApi from '../services/receipts';
+import * as referencesApi from '../services/references';
+import * as authApi from '../services/auth';
+import { ApiError } from '../services/client';
 
-vi.mock('../api/receipts');
-vi.mock('../api/references');
-vi.mock('../api/auth');
+vi.mock('../services/receipts');
+vi.mock('../services/references');
+vi.mock('../services/auth');
 
 function renderWithProviders(ui: React.ReactElement) {
   return render(

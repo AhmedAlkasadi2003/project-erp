@@ -1,7 +1,6 @@
-import type { Receipt } from './receipts';
-
 export interface PaginationMeta {
   total: number;
+  totalItems?: number;
   page: number;
   limit: number;
   totalPages: number;
@@ -11,10 +10,5 @@ export interface PaginationMeta {
 
 export interface PaginatedResponse<T> {
   data: T[];
-  meta: PaginationMeta;
-}
-
-export interface ReceiptsListResponse {
-  data: Receipt[];
   meta: PaginationMeta;
 }

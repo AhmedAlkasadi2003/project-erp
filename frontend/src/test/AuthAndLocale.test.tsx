@@ -1,12 +1,12 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { LoginForm } from '../components/auth/LoginForm';
-import { AuthProvider, useAuth } from '../context/AuthContext';
-import { LocaleProvider, useLocale } from '../context/LocaleContext';
-import * as authApi from '../api/auth';
+import { LoginForm } from '../features/auth/LoginForm';
+import { AuthProvider, useAuth } from '../store/AuthContext';
+import { LocaleProvider, useLocale } from '../store/LocaleContext';
+import * as authApi from '../services/auth';
 
-vi.mock('../api/auth');
+vi.mock('../services/auth');
 
 const DummyLocaleConsumer: React.FC = () => {
   const { locale, dir, setLocale, formatCurrency, formatDate, formatQuantity } = useLocale();

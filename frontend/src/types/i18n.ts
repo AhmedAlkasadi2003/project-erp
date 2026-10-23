@@ -25,7 +25,6 @@ export interface Translations {
     accountingPeriods: string;
     trialBalance: string;
     auditTrail: string;
-    systemHealth: string;
     userProfile: string;
   };
   roles: {

@@ -7,5 +7,4 @@ export type AppView =
   | 'chart-of-accounts'
   | 'accounting-periods'
   | 'trial-balance'
-  | 'audit-trail'
-  | 'health';
+  | 'audit-trail';

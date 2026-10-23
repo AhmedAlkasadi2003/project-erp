@@ -26,7 +26,6 @@ export const en: Translations = {
     accountingPeriods: 'Accounting Periods',
     trialBalance: 'Trial Balance',
     auditTrail: 'Audit Trail',
-    systemHealth: 'System Health',
     userProfile: 'User Profile',
   },
   roles: {

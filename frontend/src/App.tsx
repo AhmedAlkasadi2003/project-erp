@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { LocaleProvider, useLocale } from './hooks/useLocale';
 import { MainLayout } from './layouts/MainLayout';
 import { RouteGuard } from './components/RouteGuard';
+import { ROUTES } from './routes';
 import {
   LoginPage,
   ReceiptsPage,
@@ -49,11 +50,11 @@ const AppContent: React.FC = () => {
       onDismissNotification={() => setNotification(null)}
     >
       <Routes>
-        <Route path="/" element={<Navigate to="/receipts" replace />} />
+        <Route path="/" element={<Navigate to={ROUTES.RECEIPTS} replace />} />
 
         {/* Inventory Views */}
         <Route
-          path="/receipts"
+          path={ROUTES.RECEIPTS}
           element={
             <RouteGuard view="receipts" role={user.role}>
               <ReceiptsPage
@@ -65,7 +66,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/receipts/new"
+          path={ROUTES.CREATE_RECEIPT}
           element={
             <RouteGuard view="create-receipt" role={user.role}>
               <CreateReceiptPage onSaved={handleSavedReceipt} />
@@ -73,7 +74,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/receipts/:id"
+          path={ROUTES.RECEIPT_DETAILS}
           element={
             <RouteGuard view="receipt-details" role={user.role}>
               <ReceiptsPage
@@ -85,7 +86,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/receipts/:id/edit"
+          path={ROUTES.EDIT_RECEIPT}
           element={
             <RouteGuard view="edit-receipt" role={user.role}>
               <ReceiptsPage
@@ -96,7 +97,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/stock-card"
+          path={ROUTES.STOCK_CARD}
           element={
             <RouteGuard view="stock-card" role={user.role}>
               <StockCardPage />
@@ -106,7 +107,7 @@ const AppContent: React.FC = () => {
 
         {/* Finance Views */}
         <Route
-          path="/chart-of-accounts"
+          path={ROUTES.CHART_OF_ACCOUNTS}
           element={
             <RouteGuard view="chart-of-accounts" role={user.role}>
               <ChartOfAccountsPage />
@@ -114,7 +115,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/accounting-periods"
+          path={ROUTES.ACCOUNTING_PERIODS}
           element={
             <RouteGuard view="accounting-periods" role={user.role}>
               <AccountingPeriodsPage />
@@ -122,7 +123,7 @@ const AppContent: React.FC = () => {
           }
         />
         <Route
-          path="/trial-balance"
+          path={ROUTES.TRIAL_BALANCE}
           element={
             <RouteGuard view="trial-balance" role={user.role}>
               <TrialBalancePage />
@@ -132,7 +133,7 @@ const AppContent: React.FC = () => {
 
         {/* System Views */}
         <Route
-          path="/audit-trail"
+          path={ROUTES.AUDIT_TRAIL}
           element={
             <RouteGuard view="audit-trail" role={user.role}>
               <AuditTrailPage />
@@ -141,7 +142,7 @@ const AppContent: React.FC = () => {
         />
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="/receipts" replace />} />
+        <Route path="*" element={<Navigate to={ROUTES.RECEIPTS} replace />} />
       </Routes>
     </MainLayout>
   );

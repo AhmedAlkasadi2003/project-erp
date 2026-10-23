@@ -1,15 +1,29 @@
 import { AppView, NavItemConfig, UserRole } from '../types';
 
+export const ROUTES = {
+  HOME: '/',
+  RECEIPTS: '/receipts',
+  CREATE_RECEIPT: '/receipts/new',
+  RECEIPT_DETAILS: '/receipts/:id',
+  EDIT_RECEIPT: '/receipts/:id/edit',
+  STOCK_CARD: '/stock-card',
+  CHART_OF_ACCOUNTS: '/chart-of-accounts',
+  ACCOUNTING_PERIODS: '/accounting-periods',
+  TRIAL_BALANCE: '/trial-balance',
+  AUDIT_TRAIL: '/audit-trail',
+  LOGIN: '/login',
+} as const;
+
 export const VIEW_PATHS: Record<AppView, string> = {
-  receipts: '/receipts',
-  'create-receipt': '/receipts/new',
-  'stock-card': '/stock-card',
-  'chart-of-accounts': '/chart-of-accounts',
-  'accounting-periods': '/accounting-periods',
-  'trial-balance': '/trial-balance',
-  'audit-trail': '/audit-trail',
-  'receipt-details': '/receipts/:id',
-  'edit-receipt': '/receipts/:id/edit',
+  receipts: ROUTES.RECEIPTS,
+  'create-receipt': ROUTES.CREATE_RECEIPT,
+  'stock-card': ROUTES.STOCK_CARD,
+  'chart-of-accounts': ROUTES.CHART_OF_ACCOUNTS,
+  'accounting-periods': ROUTES.ACCOUNTING_PERIODS,
+  'trial-balance': ROUTES.TRIAL_BALANCE,
+  'audit-trail': ROUTES.AUDIT_TRAIL,
+  'receipt-details': ROUTES.RECEIPT_DETAILS,
+  'edit-receipt': ROUTES.EDIT_RECEIPT,
 };
 
 /**
@@ -19,49 +33,49 @@ export const VIEW_PATHS: Record<AppView, string> = {
 export const NAVIGATION_ITEMS: NavItemConfig[] = [
   {
     id: 'receipts',
-    path: '/receipts',
+    path: ROUTES.RECEIPTS,
     labelKey: 'receipts',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER', 'CLERK', 'VIEWER'],
     category: 'inventory',
   },
   {
     id: 'create-receipt',
-    path: '/receipts/new',
+    path: ROUTES.CREATE_RECEIPT,
     labelKey: 'newReceipt',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER', 'CLERK'],
     category: 'inventory',
   },
   {
     id: 'stock-card',
-    path: '/stock-card',
+    path: ROUTES.STOCK_CARD,
     labelKey: 'stockCard',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER', 'CLERK', 'VIEWER'],
     category: 'inventory',
   },
   {
     id: 'chart-of-accounts',
-    path: '/chart-of-accounts',
+    path: ROUTES.CHART_OF_ACCOUNTS,
     labelKey: 'chartOfAccounts',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'], // Hidden for Clerk & Warehouse Manager
     category: 'finance',
   },
   {
     id: 'accounting-periods',
-    path: '/accounting-periods',
+    path: ROUTES.ACCOUNTING_PERIODS,
     labelKey: 'accountingPeriods',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'], // Hidden for Clerk & Warehouse Manager
     category: 'finance',
   },
   {
     id: 'trial-balance',
-    path: '/trial-balance',
+    path: ROUTES.TRIAL_BALANCE,
     labelKey: 'trialBalance',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT'], // Hidden for Clerk & Warehouse Manager
     category: 'finance',
   },
   {
     id: 'audit-trail',
-    path: '/audit-trail',
+    path: ROUTES.AUDIT_TRAIL,
     labelKey: 'auditTrail',
     allowedRoles: ['ADMIN', 'SUPER_ADMIN', 'ACCOUNTANT', 'WAREHOUSE_MANAGER'], // Hidden for Clerk
     category: 'system',
@@ -103,14 +117,14 @@ export function getAuthorizedNavItems(role: UserRole | undefined): NavItemConfig
 export function getPathForView(view: AppView, params?: { id?: string }): string {
   if (view === 'receipt-details' && params?.id) return `/receipts/${params.id}`;
   if (view === 'edit-receipt' && params?.id) return `/receipts/${params.id}/edit`;
-  return VIEW_PATHS[view] || '/receipts';
+  return VIEW_PATHS[view] || ROUTES.RECEIPTS;
 }
 
 /**
  * Extracts the corresponding AppView from a given URL pathname.
  */
 export function getViewFromPath(pathname: string): AppView {
-  if (pathname === '/receipts/new') return 'create-receipt';
+  if (pathname === ROUTES.CREATE_RECEIPT) return 'create-receipt';
   if (pathname.match(/^\/receipts\/[^/]+\/edit$/)) return 'edit-receipt';
   if (pathname.match(/^\/receipts\/[^/]+$/)) return 'receipt-details';
   if (pathname.startsWith('/receipts')) return 'receipts';

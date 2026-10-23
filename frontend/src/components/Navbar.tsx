@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useLocale } from '../hooks/useLocale';
 import { AppView } from '../types';
-import { getAuthorizedNavItems, getPathForView } from '../utils/navigation';
+import { getAuthorizedNavItems, getPathForView } from '../routes';
 
 export type { AppView };
 

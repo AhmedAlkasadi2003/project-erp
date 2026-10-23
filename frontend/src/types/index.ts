@@ -1,5 +1,5 @@
 // Global application types
-export * from './navigation';
+export * from './routes';
 export * from './pagination';
 export * from './i18n';
 

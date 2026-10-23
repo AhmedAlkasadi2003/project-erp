@@ -36,7 +36,7 @@ export async function getAccounts(params?: {
   };
 }
 
-export async function createAccount(data: CreateAccountDto): Promise<Account> {
+export async function (data: CreateAccountDto): Promise<Account> {
   return apiClient<Account>('accounts', {
     method: 'POST',
     body: JSON.stringify(data),

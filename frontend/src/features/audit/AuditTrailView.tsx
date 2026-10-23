@@ -5,7 +5,8 @@ import { getAuditEvents } from '../../services/audit-trail';
 import { AuditEvent, PaginationMeta } from '../../types';
 import { Alert } from '../../components/Alert';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
-import { Pagination } from '../../components/Pagination';
+import { AuditEventsTable } from './AuditEventsTable';
+import { AuditEventDetailModal } from './AuditEventDetailModal';
 
 export const AuditTrailView: React.FC = () => {
   const { user } = useAuth();
@@ -144,147 +145,21 @@ export const AuditTrailView: React.FC = () => {
           <p>{t.audit.noEvents}</p>
         </div>
       ) : (
-        <div className="card table-card">
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t.audit.timestamp}</th>
-                  <th>{t.audit.user}</th>
-                  <th>{t.audit.action}</th>
-                  <th>{t.audit.entityType}</th>
-                  <th>معرّف الكيان (Entity ID)</th>
-                  <th style={{ textAlign: 'center' }}>{t.audit.details}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((ev) => {
-                  const isPost = ev.action === 'POST';
-                  const isVoid = ev.action === 'VOID';
-                  return (
-                    <tr key={ev.id}>
-                      <td className="font-mono" style={{ fontSize: '0.85rem' }}>
-                        {new Date(ev.createdAt).toLocaleString()}
-                      </td>
-                      <td>
-                        <strong>{ev.user?.name || ev.user?.email || 'System'}</strong>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          {ev.user?.email || ev.userId?.substring(0, 8)}
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            isPost
-                              ? 'badge-success'
-                              : isVoid
-                              ? 'badge-danger'
-                              : 'badge-info'
-                          }`}
-                        >
-                          {ev.action}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge badge-default">{ev.entityType}</span>
-                      </td>
-                      <td className="font-mono" style={{ fontSize: '0.85rem' }}>
-                        <code>{ev.entityId}</code>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          type="button"
-                          className="btn btn-xs btn-outline"
-                          onClick={() => setInspectEvent(ev)}
-                        >
-                          استعراض البيانات
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <Pagination
-            meta={meta}
-            onPageChange={(newPage) => setPage(newPage)}
-          />
-        </div>
+        <AuditEventsTable
+          events={events}
+          meta={meta}
+          onInspect={(ev) => setInspectEvent(ev)}
+          onPageChange={(newPage) => setPage(newPage)}
+          t={t}
+        />
       )}
 
       {/* Inspect Event Modal */}
-      {inspectEvent && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: '650px' }}>
-            <div className="modal-header">
-              <h3 className="modal-title">
-                تفاصيل حدث التدقيق: {inspectEvent.action} ({inspectEvent.entityType})
-              </h3>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => setInspectEvent(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: '1rem' }}>
-                <div><strong>الوقت:</strong> {new Date(inspectEvent.createdAt).toLocaleString()}</div>
-                <div><strong>المستخدم:</strong> {inspectEvent.user?.name} ({inspectEvent.user?.email})</div>
-                <div><strong>الكيان:</strong> {inspectEvent.entityType} — <code>{inspectEvent.entityId}</code></div>
-              </div>
-
-              {inspectEvent.metadata && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">البيانات الوصفية (Metadata):</label>
-                  <pre
-                    style={{
-                      background: '#0f172a',
-                      color: '#38bdf8',
-                      padding: '0.75rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.8rem',
-                      overflowX: 'auto',
-                    }}
-                  >
-                    {JSON.stringify(inspectEvent.metadata, null, 2)}
-                  </pre>
-                </div>
-              )}
-
-              {inspectEvent.changes && (
-                <div>
-                  <label className="form-label">{t.audit.changes}:</label>
-                  <pre
-                    style={{
-                      background: '#0f172a',
-                      color: '#4ade80',
-                      padding: '0.75rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.8rem',
-                      overflowX: 'auto',
-                    }}
-                  >
-                    {JSON.stringify(inspectEvent.changes, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => setInspectEvent(null)}
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AuditEventDetailModal
+        event={inspectEvent}
+        onClose={() => setInspectEvent(null)}
+        t={t}
+      />
     </div>
   );
 };

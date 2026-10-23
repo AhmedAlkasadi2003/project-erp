@@ -7,6 +7,8 @@ import { Alert } from '../../components/Alert';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { PostReceiptModal } from './PostReceiptModal';
 import { VoidReceiptModal } from './VoidReceiptModal';
+import { ReceiptMetadataGrid } from './ReceiptMetadataGrid';
+import { ReceiptLinesTable } from './ReceiptLinesTable';
 import { translateErrorMessage } from '../../utils/errorTranslator';
 import * as receiptsApi from '../../services/receipts';
 
@@ -23,7 +25,7 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
   onEdit,
   onReceiptDeleted,
 }) => {
-  const { t, locale, formatCurrency, formatDate, formatQuantity } = useLocale();
+  const { t, locale } = useLocale();
 
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -146,150 +148,10 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
       )}
 
       {/* Document Metadata Grid */}
-      <div className="details-meta-grid">
-        <div className="meta-card">
-          <span className="meta-label">{t.receipts.receiptNumber}</span>
-          <strong className="meta-value">{receipt.receiptNumber}</strong>
-        </div>
-
-        <div className="meta-card">
-          <span className="meta-label">{t.receipts.date}</span>
-          <span className="meta-value">{formatDate(receipt.receiptDate)}</span>
-        </div>
-
-        <div className="meta-card">
-          <span className="meta-label">{t.receipts.warehouse}</span>
-          <span className="meta-value">
-            {receipt.warehouse
-              ? `${receipt.warehouse.name} (${receipt.warehouse.code})`
-              : receipt.warehouseId}
-          </span>
-        </div>
-
-        <div className="meta-card">
-          <span className="meta-label">{t.receipts.supplier}</span>
-          <span className="meta-value">
-            {receipt.supplier
-              ? `${receipt.supplier.name} (${receipt.supplier.code})`
-              : receipt.supplierId}
-          </span>
-        </div>
-
-        <div className="meta-card">
-          <span className="meta-label">{t.receipts.createdAt}</span>
-          <span className="meta-value">{formatDate(receipt.createdAt)}</span>
-        </div>
-
-        {receipt.postingDate && (
-          <div className="meta-card">
-            <span className="meta-label">{t.receipts.postedBy}</span>
-            <span className="meta-value">
-              {receipt.postedByUser
-                ? `${receipt.postedByUser.firstName} ${receipt.postedByUser.lastName}`
-                : receipt.postedById || 'System'}{' '}
-              ({formatDate(receipt.postingDate)})
-            </span>
-          </div>
-        )}
-
-        {receipt.journalEntryId && (
-          <div className="meta-card highlight-card">
-            <span className="meta-label">{t.receipts.journalEntry}</span>
-            <span className="meta-value font-mono">{receipt.journalEntryId}</span>
-          </div>
-        )}
-
-        {receipt.voidedAt && (
-          <div className="meta-card highlight-card-danger">
-            <span className="meta-label">{t.receipts.voidedBy}</span>
-            <span className="meta-value">
-              {receipt.voidedByUser
-                ? `${receipt.voidedByUser.firstName} ${receipt.voidedByUser.lastName}`
-                : receipt.voidedById || 'System'}{' '}
-              ({formatDate(receipt.voidedAt)})
-            </span>
-            {receipt.voidReason && (
-              <p className="void-reason-text">
-                <strong>{t.receipts.voidReason}:</strong> {receipt.voidReason}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {receipt.notes && (
-        <div className="notes-banner">
-          <strong>{t.receipts.notes}:</strong> {receipt.notes}
-        </div>
-      )}
+      <ReceiptMetadataGrid receipt={receipt} />
 
       {/* Line Items Table */}
-      <div className="details-lines-card">
-        <h3 className="section-title">{t.receipts.lines}</h3>
-        <div className="table-responsive">
-          <table className="data-table" aria-label="Receipt Line Items Breakdown">
-            <thead>
-              <tr>
-                <th scope="col" style={{ width: '40px' }}>
-                  #
-                </th>
-                <th scope="col">{t.receipts.item}</th>
-                <th scope="col" className="text-end">
-                  {t.receipts.quantity}
-                </th>
-                <th scope="col" className="text-end">
-                  {t.receipts.unitCost}
-                </th>
-                <th scope="col" className="text-end">
-                  {t.receipts.taxAmount}
-                </th>
-                <th scope="col" className="text-end">
-                  {t.receipts.lineTotal}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipt.lines.map((line) => (
-                <tr key={line.id}>
-                  <td className="text-muted">{line.lineNumber}</td>
-                  <td>
-                    <strong>{line.item?.sku || line.itemId}</strong>
-                    {line.item?.name && <span className="item-sub-name"> — {line.item.name}</span>}
-                    {line.notes && <p className="line-note-text">{line.notes}</p>}
-                  </td>
-                  <td className="text-end font-mono">
-                    {formatQuantity(line.quantityReceived)}{' '}
-                    <small className="text-muted">{line.item?.uom || ''}</small>
-                  </td>
-                  <td className="text-end font-mono">{formatCurrency(line.unitCost)}</td>
-                  <td className="text-end font-mono">{formatCurrency(line.taxAmount)}</td>
-                  <td className="text-end font-mono font-bold">
-                    {formatCurrency(line.totalAmount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Financial Summary Box */}
-        <div className="totals-summary-card">
-          <div className="summary-row">
-            <span>{t.receipts.subtotal}:</span>
-            <span className="font-mono">{formatCurrency(receipt.subtotal)}</span>
-          </div>
-          <div className="summary-row">
-            <span>{t.receipts.taxAmount}:</span>
-            <span className="font-mono">{formatCurrency(receipt.taxAmount)}</span>
-          </div>
-          <div className="summary-row summary-grand-total">
-            <span>{t.receipts.totalAmount}:</span>
-            <span className="font-mono font-bold grand-total-highlight">
-              {formatCurrency(receipt.totalAmount)}
-            </span>
-          </div>
-        </div>
-      </div>
+      <ReceiptLinesTable receipt={receipt} />
 
       {/* Post Modal */}
       <PostReceiptModal

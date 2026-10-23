@@ -3,19 +3,19 @@ import {
   PaginationMeta,
   QueryReceiptsParams,
   Receipt,
-  ReceiptStatus,
   Supplier,
   Warehouse,
 } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
 import { useLocale } from '../../hooks/useLocale';
-import { StatusBadge } from '../../components/StatusBadge';
 import { Pagination } from '../../components/Pagination';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { Alert } from '../../components/Alert';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { PostReceiptModal } from './PostReceiptModal';
 import { VoidReceiptModal } from './VoidReceiptModal';
+import { ReceiptFilterToolbar } from './ReceiptFilterToolbar';
+import { ReceiptTable } from './ReceiptTable';
 import { translateErrorMessage } from '../../utils/errorTranslator';
 import * as receiptsApi from '../../services/receipts';
 import * as referencesApi from '../../services/references';
@@ -81,7 +81,7 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
   onCreateNew,
 }) => {
   const { user } = useAuth();
-  const { t, locale, formatCurrency, formatDate } = useLocale();
+  const { t, locale } = useLocale();
 
   const initialParams = getUrlParams();
 
@@ -98,11 +98,7 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // Filter states initialized from URL search params
+  // Filter & Search states
   const [search, setSearch] = useState<string>(initialParams.search || '');
   const [status, setStatus] = useState<string>(initialParams.status || '');
   const [warehouseId, setWarehouseId] = useState<string>(initialParams.warehouseId || '');
@@ -114,7 +110,12 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
   >(initialParams.sortBy || 'createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(initialParams.sortOrder || 'desc');
 
-  // Modal states
+  // Loading and Notifications
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Workflow Dialogs Targets
   const [postTarget, setPostTarget] = useState<Receipt | null>(null);
   const [voidTarget, setVoidTarget] = useState<Receipt | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Receipt | null>(null);
@@ -129,47 +130,46 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
       ]);
       setWarehouses(whList);
       setSuppliers(supList);
-    } catch {
-      // Ignore reference load errors
+    } catch (err) {
+      console.error('Failed to load warehouses/suppliers', err);
     }
   }, [user?.companyId]);
 
   const loadReceipts = useCallback(
-    async (pageToLoad = meta.page, limitToLoad = meta.limit) => {
+    async (pageToLoad = 1, limitToLoad = 10) => {
       setLoading(true);
       setError(null);
+
+      const params: QueryReceiptsParams = {
+        page: pageToLoad,
+        limit: limitToLoad,
+        search: search.trim() || undefined,
+        status: (status as Receipt['status']) || undefined,
+        warehouseId: warehouseId || undefined,
+        supplierId: supplierId || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        sortBy,
+        sortOrder,
+      };
+
+      updateUrlParams({
+        search,
+        status,
+        warehouseId,
+        supplierId,
+        startDate,
+        endDate,
+        sortBy,
+        sortOrder,
+        page: pageToLoad,
+        limit: limitToLoad,
+      });
+
       try {
-        const params: QueryReceiptsParams = {
-          page: pageToLoad,
-          limit: limitToLoad,
-          sortBy,
-          sortOrder,
-        };
-
-        if (search.trim()) params.search = search.trim();
-        if (status) params.status = status as ReceiptStatus;
-        if (warehouseId) params.warehouseId = warehouseId;
-        if (supplierId) params.supplierId = supplierId;
-        if (startDate) params.startDate = startDate;
-        if (endDate) params.endDate = endDate;
-
-        const res = await receiptsApi.getReceipts(params);
-        setReceipts(res.data);
-        setMeta(res.meta);
-
-        // Sync active query filters and pagination to the browser URL
-        updateUrlParams({
-          search,
-          status,
-          warehouseId,
-          supplierId,
-          startDate,
-          endDate,
-          sortBy,
-          sortOrder,
-          page: pageToLoad,
-          limit: limitToLoad,
-        });
+        const response = await receiptsApi.getReceipts(params);
+        setReceipts(response.data);
+        setMeta(response.meta);
       } catch (err) {
         setError(
           translateErrorMessage(
@@ -182,16 +182,14 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
       }
     },
     [
-      meta.page,
-      meta.limit,
-      sortBy,
-      sortOrder,
       search,
       status,
       warehouseId,
       supplierId,
       startDate,
       endDate,
+      sortBy,
+      sortOrder,
       locale,
     ],
   );
@@ -279,150 +277,29 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
 
       {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
 
-      {/* Filter Toolbar */}
-      <form onSubmit={handleApplyFilters} className="filter-card">
-        <div className="filter-grid">
-          <div className="form-group">
-            <label htmlFor="search-input" className="form-label">
-              {t.receipts.searchPlaceholder}
-            </label>
-            <input
-              id="search-input"
-              type="text"
-              className="form-input"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t.receipts.searchPlaceholder}
-            />
-          </div>
+      <ReceiptFilterToolbar
+        search={search}
+        onSearchChange={setSearch}
+        status={status}
+        onStatusChange={setStatus}
+        warehouseId={warehouseId}
+        onWarehouseChange={setWarehouseId}
+        supplierId={supplierId}
+        onSupplierChange={setSupplierId}
+        startDate={startDate}
+        onStartDateChange={setStartDate}
+        endDate={endDate}
+        onEndDateChange={setEndDate}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        sortOrder={sortOrder}
+        onSortOrderChange={setSortOrder}
+        warehouses={warehouses}
+        suppliers={suppliers}
+        onApply={handleApplyFilters}
+        onReset={handleResetFilters}
+      />
 
-          <div className="form-group">
-            <label htmlFor="status-select" className="form-label">
-              {t.receipts.status}
-            </label>
-            <select
-              id="status-select"
-              className="form-select"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="">{t.statuses.ALL}</option>
-              <option value="DRAFT">{t.statuses.DRAFT}</option>
-              <option value="POSTED">{t.statuses.POSTED}</option>
-              <option value="VOIDED">{t.statuses.VOIDED}</option>
-              <option value="CANCELLED">{t.statuses.CANCELLED}</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="warehouse-select" className="form-label">
-              {t.receipts.warehouse}
-            </label>
-            <select
-              id="warehouse-select"
-              className="form-select"
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value)}
-            >
-              <option value="">{t.receipts.filterByWarehouse}</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.code} — {w.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="supplier-select" className="form-label">
-              {t.receipts.supplier}
-            </label>
-            <select
-              id="supplier-select"
-              className="form-select"
-              value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value)}
-            >
-              <option value="">{t.receipts.filterBySupplier}</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code} — {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="date-from-input" className="form-label">
-              {t.receipts.dateFrom}
-            </label>
-            <input
-              id="date-from-input"
-              type="date"
-              className="form-input"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="date-to-input" className="form-label">
-              {t.receipts.dateTo}
-            </label>
-            <input
-              id="date-to-input"
-              type="date"
-              className="form-input"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="filter-actions">
-          <div className="sort-group">
-            <label htmlFor="sort-by-select" className="form-label">
-              {t.receipts.sortBy}
-            </label>
-            <select
-              id="sort-by-select"
-              className="form-select form-select-sm"
-              value={sortBy}
-              onChange={(e) =>
-                setSortBy(
-                  e.target.value as 'receiptDate' | 'receiptNumber' | 'totalAmount' | 'createdAt',
-                )
-              }
-            >
-              <option value="createdAt">{t.receipts.createdAt}</option>
-              <option value="receiptDate">{t.receipts.date}</option>
-              <option value="receiptNumber">{t.receipts.receiptNumber}</option>
-              <option value="totalAmount">{t.receipts.totalAmount}</option>
-            </select>
-
-            <select
-              id="sort-order-select"
-              className="form-select form-select-sm"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
-            >
-              <option value="desc">{t.receipts.desc}</option>
-              <option value="asc">{t.receipts.asc}</option>
-            </select>
-          </div>
-
-          <div className="filter-buttons">
-            <button type="button" className="btn btn-outline btn-sm" onClick={handleResetFilters}>
-              {t.receipts.resetFilters}
-            </button>
-            <button type="submit" className="btn btn-primary btn-sm">
-              {t.receipts.applyFilters}
-            </button>
-          </div>
-        </div>
-      </form>
-
-      {/* Main Table / Data View */}
       {loading ? (
         <LoadingSpinner message={t.common.loading} />
       ) : receipts.length === 0 ? (
@@ -437,113 +314,16 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
           </button>
         </div>
       ) : (
-        <div className="table-responsive">
-          <table className="data-table" aria-label="Inventory Receipts Table">
-            <thead>
-              <tr>
-                <th scope="col">{t.receipts.receiptNumber}</th>
-                <th scope="col">{t.receipts.date}</th>
-                <th scope="col">{t.receipts.supplier}</th>
-                <th scope="col">{t.receipts.warehouse}</th>
-                <th scope="col">{t.receipts.status}</th>
-                <th scope="col" className="text-end">
-                  {t.receipts.totalAmount}
-                </th>
-                <th scope="col" className="text-center">
-                  {t.receipts.actions}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipts.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className="link-button receipt-number-link"
-                      onClick={() => onSelectReceipt(r.id)}
-                      title={t.receipts.view}
-                    >
-                      {r.receiptNumber}
-                    </button>
-                  </td>
-                  <td>{formatDate(r.receiptDate)}</td>
-                  <td>
-                    <span className="cell-supplier-name">
-                      {r.supplier?.name || r.supplier?.code || r.supplierId}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="cell-warehouse-name">
-                      {r.warehouse?.name || r.warehouse?.code || r.warehouseId}
-                    </span>
-                  </td>
-                  <td>
-                    <StatusBadge status={r.status} />
-                  </td>
-                  <td className="text-end font-mono">
-                    <strong>{formatCurrency(r.totalAmount)}</strong>
-                  </td>
-                  <td>
-                    <div className="table-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline"
-                        onClick={() => onSelectReceipt(r.id)}
-                        aria-label={`${t.receipts.view} ${r.receiptNumber}`}
-                      >
-                        {t.receipts.view}
-                      </button>
-
-                      {r.status === 'DRAFT' && (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline"
-                            onClick={() => onEditReceipt(r.id)}
-                            aria-label={`${t.receipts.edit} ${r.receiptNumber}`}
-                          >
-                            {t.receipts.edit}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-primary"
-                            onClick={() => setPostTarget(r)}
-                            aria-label={`${t.receipts.post} ${r.receiptNumber}`}
-                          >
-                            {t.receipts.post}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-danger"
-                            onClick={() => setDeleteTarget(r)}
-                            aria-label={`${t.receipts.delete} ${r.receiptNumber}`}
-                          >
-                            {t.receipts.delete}
-                          </button>
-                        </>
-                      )}
-
-                      {r.status === 'POSTED' && (
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => setVoidTarget(r)}
-                          aria-label={`${t.receipts.void} ${r.receiptNumber}`}
-                        >
-                          {t.receipts.void}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ReceiptTable
+          receipts={receipts}
+          onSelectReceipt={onSelectReceipt}
+          onEditReceipt={onEditReceipt}
+          onPostTarget={setPostTarget}
+          onVoidTarget={setVoidTarget}
+          onDeleteTarget={setDeleteTarget}
+        />
       )}
 
-      {/* Pagination Footer */}
       {!loading && receipts.length > 0 && (
         <Pagination
           meta={meta}
@@ -552,7 +332,6 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         />
       )}
 
-      {/* Post Receipt Modal */}
       <PostReceiptModal
         receipt={postTarget}
         isOpen={!!postTarget}
@@ -564,7 +343,6 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
-      {/* Void Receipt Modal */}
       <VoidReceiptModal
         receipt={voidTarget}
         isOpen={!!voidTarget}
@@ -576,7 +354,6 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
         onError={(err) => setError(translateErrorMessage(err, locale))}
       />
 
-      {/* Delete Draft Modal */}
       <ConfirmModal
         isOpen={!!deleteTarget}
         title={t.receipts.deleteConfirmTitle}

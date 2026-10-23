@@ -6,6 +6,9 @@ import { getItemStockCard } from '../../services/stock-card';
 import { Item, StockCardResponse, Warehouse } from '../../types';
 import { Alert } from '../../components/Alert';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+import { StockCardSummaryCards } from './StockCardSummaryCards';
+import { StockMovementTable } from './StockMovementTable';
+import { WarehouseBalancesTable } from './WarehouseBalancesTable';
 
 export const StockCardView: React.FC = () => {
   const { company } = useAuth();
@@ -149,7 +152,14 @@ export const StockCardView: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '0.75rem',
+              marginTop: '1rem',
+              alignItems: 'center',
+            }}
+          >
             <div style={{ flex: 1 }}>
               <label htmlFor="date-to" className="form-label">
                 {t.receipts.dateTo}
@@ -183,153 +193,10 @@ export const StockCardView: React.FC = () => {
 
       {!loading && stockCard && (
         <>
-          {/* Item Meta & Balances Banner */}
-          <div className="stock-summary-grid" style={{ marginBottom: '1.5rem' }}>
-            <div className="summary-card">
-              <span className="summary-label">{t.stockCard.openingBalance}</span>
-              <span className="summary-value">
-                {Number(stockCard.openingBalance.quantity).toFixed(2)} {stockCard.item.uom}
-              </span>
-              <span className="summary-sub">
-                {t.stockCard.runningAverageCost}: {Number(stockCard.openingBalance.averageCost).toFixed(4)}
-              </span>
-              <span className="summary-sub">
-                {t.stockCard.valuation}: {Number(stockCard.openingBalance.totalValue).toFixed(2)}
-              </span>
-            </div>
-
-            <div className="summary-card">
-              <span className="summary-label">{t.stockCard.totalMovements}</span>
-              <span className="summary-value">{stockCard.movements.length}</span>
-              <span className="summary-sub">{stockCard.item.name}</span>
-              <span className="summary-sub">
-                {stockCard.item.sku} • {stockCard.item.valuationMethod}
-              </span>
-            </div>
-
-            <div className="summary-card highlight">
-              <span className="summary-label">{t.stockCard.closingBalance}</span>
-              <span className="summary-value">
-                {Number(stockCard.closingBalance.quantity).toFixed(2)} {stockCard.item.uom}
-              </span>
-              <span className="summary-sub">
-                {t.stockCard.runningAverageCost}: {Number(stockCard.closingBalance.averageCost).toFixed(4)}
-              </span>
-              <span className="summary-sub">
-                {t.stockCard.valuation}: {Number(stockCard.closingBalance.totalValue).toFixed(2)}
-              </span>
-            </div>
-          </div>
-
-          {/* Chronological Ledger Table */}
-          <div className="card table-card" style={{ marginBottom: '1.5rem' }}>
-            <div className="card-header-bar">
-              <h3 className="card-title">{t.stockCard.movementHistory}</h3>
-              <span className="badge badge-info">{t.stockCard.costingNote}</span>
-            </div>
-
-            {stockCard.movements.length === 0 ? (
-              <div className="empty-state">
-                <p>{t.stockCard.noMovements}</p>
-              </div>
-            ) : (
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>{t.receipts.date}</th>
-                      <th>{t.stockCard.movementType}</th>
-                      <th>{t.stockCard.reference}</th>
-                      <th>{t.receipts.warehouse}</th>
-                      <th className="num-col">{t.receipts.quantity}</th>
-                      <th className="num-col">{t.stockCard.unitCost}</th>
-                      <th className="num-col">{t.stockCard.totalCost}</th>
-                      <th className="num-col highlight-col">{t.stockCard.runningQuantity}</th>
-                      <th className="num-col highlight-col">{t.stockCard.runningAverageCost}</th>
-                      <th>{t.stockCard.performedBy}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockCard.movements.map((m) => {
-                      const isPositive = Number(m.quantity) >= 0;
-                      return (
-                        <tr key={m.id}>
-                          <td>{new Date(m.movementDate).toLocaleDateString()}</td>
-                          <td>
-                            <span
-                              className={`badge ${
-                                m.movementType === 'INBOUND'
-                                  ? 'badge-success'
-                                  : m.movementType === 'REVERSAL'
-                                  ? 'badge-warning'
-                                  : 'badge-danger'
-                              }`}
-                            >
-                              {m.movementType}
-                            </span>
-                          </td>
-                          <td>
-                            <code>{m.referenceType}: {m.referenceId?.substring(0, 8)}</code>
-                          </td>
-                          <td>{m.warehouse?.name || '—'}</td>
-                          <td className={`num-col ${isPositive ? 'text-success' : 'text-danger'}`}>
-                            {isPositive ? `+${Number(m.quantity).toFixed(2)}` : Number(m.quantity).toFixed(2)}
-                          </td>
-                          <td className="num-col">{Number(m.unitCost).toFixed(4)}</td>
-                          <td className="num-col">{Number(m.totalCost).toFixed(2)}</td>
-                          <td className="num-col highlight-col font-mono font-bold">
-                            {Number(m.runningQuantity).toFixed(2)}
-                          </td>
-                          <td className="num-col highlight-col font-mono font-bold">
-                            {Number(m.runningAverageCost).toFixed(4)}
-                          </td>
-                          <td>{m.performedBy?.name || m.performedBy?.email || '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Current Stock Balances by Warehouse */}
-          {stockCard.currentBalances && stockCard.currentBalances.length > 0 && (
-            <div className="card">
-              <h3 className="card-title" style={{ marginBottom: '1rem' }}>
-                {t.stockCard.currentOnHand}
-              </h3>
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>{t.receipts.warehouse}</th>
-                      <th className="num-col">الرصيد الفعلي (On Hand)</th>
-                      <th className="num-col">المحجوز (Allocated)</th>
-                      <th className="num-col">المتاح (Available)</th>
-                      <th className="num-col">متوسط التكلفة</th>
-                      <th className="num-col">إجمالي القيمة</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockCard.currentBalances.map((cb) => (
-                      <tr key={cb.warehouseId}>
-                        <td>
-                          <strong>{cb.warehouse.name}</strong> ({cb.warehouse.code})
-                        </td>
-                        <td className="num-col font-bold">{Number(cb.onHandQuantity).toFixed(2)}</td>
-                        <td className="num-col">{Number(cb.allocatedQuantity).toFixed(2)}</td>
-                        <td className="num-col text-success font-bold">
-                          {Number(cb.availableQuantity).toFixed(2)}
-                        </td>
-                        <td className="num-col">{Number(cb.averageCost).toFixed(4)}</td>
-                        <td className="num-col font-bold">{Number(cb.totalValue).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <StockCardSummaryCards stockCard={stockCard} />
+          <StockMovementTable movements={stockCard.movements} />
+          {stockCard.currentBalances && (
+            <WarehouseBalancesTable currentBalances={stockCard.currentBalances} />
           )}
         </>
       )}

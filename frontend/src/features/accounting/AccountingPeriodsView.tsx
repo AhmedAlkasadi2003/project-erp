@@ -10,6 +10,8 @@ import { AccountingPeriod } from '../../types';
 import { Alert } from '../../components/Alert';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { PeriodsTable } from './PeriodsTable';
+import { PeriodFormModal } from './PeriodFormModal';
 
 export const AccountingPeriodsView: React.FC = () => {
   const { user } = useAuth();
@@ -151,137 +153,28 @@ export const AccountingPeriodsView: React.FC = () => {
       {loading ? (
         <LoadingSpinner message={t.common.loading} />
       ) : (
-        <div className="card table-card">
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t.accounting.periodName}</th>
-                  <th>{t.accounting.startDate}</th>
-                  <th>{t.accounting.endDate}</th>
-                  <th>{t.accounting.periodStatus}</th>
-                  <th>تاريخ الإغلاق</th>
-                  {canManage && <th style={{ textAlign: 'center' }}>{t.receipts.actions}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(!periods || periods.length === 0) && (
-                  <tr>
-                    <td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
-                      لا توجد فترات مالية مسجلة
-                    </td>
-                  </tr>
-                )}
-                {(periods || []).map((p) => {
-                  const isOpen = p.status === 'OPEN';
-                  return (
-                    <tr key={p.id}>
-                      <td className="font-bold">{p.name}</td>
-                      <td>{new Date(p.startDate).toLocaleDateString()}</td>
-                      <td>{new Date(p.endDate).toLocaleDateString()}</td>
-                      <td>
-                        <span className={`badge ${isOpen ? 'badge-success' : 'badge-default'}`}>
-                          {isOpen ? 'مفتوحة (OPEN)' : 'مغلقة (CLOSED)'}
-                        </span>
-                      </td>
-                      <td>
-                        {p.closedAt ? new Date(p.closedAt).toLocaleString() : '—'}
-                      </td>
-                      {canManage && (
-                        <td style={{ textAlign: 'center' }}>
-                          {isOpen ? (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-outline text-danger"
-                              onClick={() => setClosingPeriodId(p.id)}
-                            >
-                              🔒 {t.accounting.closePeriod}
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                              مغلقة نهائياً
-                            </span>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <PeriodsTable
+          periods={periods}
+          canManage={canManage}
+          onClosePeriod={(id) => setClosingPeriodId(id)}
+          t={t}
+        />
       )}
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3 className="modal-title">{t.accounting.newPeriod}</h3>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => setShowCreateModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreatePeriod}>
-              <div className="modal-body">
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">{t.accounting.periodName}</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="مثال: نوفمبر 2026 أو FY2026-M11"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">{t.accounting.startDate}</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">{t.accounting.endDate}</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setShowCreateModal(false)}
-                  disabled={creating}
-                >
-                  {t.common.cancel}
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={creating}>
-                  {creating ? t.common.saving : t.common.save}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <PeriodFormModal
+        isOpen={showCreateModal}
+        name={name}
+        setName={setName}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+        creating={creating}
+        onSubmit={handleCreatePeriod}
+        onClose={() => setShowCreateModal(false)}
+        t={t}
+      />
 
       {/* Close Period Confirmation */}
       {closingPeriodId && (

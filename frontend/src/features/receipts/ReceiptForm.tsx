@@ -14,7 +14,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useLocale } from '../../hooks/useLocale';
 import { Alert } from '../../components/Alert';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
-import { FormField } from '../../components/FormField';
+import { ReceiptFormHeader } from './ReceiptFormHeader';
+import { ReceiptFormLines } from './ReceiptFormLines';
 import { translateErrorMessage } from '../../utils/errorTranslator';
 import * as receiptsApi from '../../services/receipts';
 import * as referencesApi from '../../services/references';
@@ -54,7 +55,7 @@ interface ReceiptFormProps {
 
 export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, onCancel }) => {
   const { user } = useAuth();
-  const { t, locale, formatCurrency } = useLocale();
+  const { t, locale } = useLocale();
 
   const isEditMode = Boolean(receiptId);
 
@@ -121,11 +122,15 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
         return whole * 10000n + (sign < 0n ? -frac : frac);
       };
 
-      const q = parseDec4(qStr);
-      const c = parseDec4(cStr);
-      const product = q * c;
-      const rounded = (product + 5000n) / 10000n;
-      totalCents += rounded;
+      try {
+        const q = parseDec4(qStr);
+        const c = parseDec4(cStr);
+        const product = q * c;
+        const rounded = (product + 5000n) / 10000n;
+        totalCents += rounded;
+      } catch {
+        // Fallback for non-numeric input
+      }
     }
 
     const isNeg = totalCents < 0n;
@@ -170,19 +175,23 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
   const loadReceiptForEdit = useCallback(async () => {
     if (!receiptId) return;
     try {
-      const r = await receiptsApi.getReceiptById(receiptId);
-      if (r.status !== 'DRAFT') {
+      const receipt = await receiptsApi.getReceiptById(receiptId);
+      if (receipt.status !== 'DRAFT') {
         setIsNonDraftLocked(true);
+        return;
       }
+
       reset({
-        warehouseId: r.warehouseId,
-        supplierId: r.supplierId,
-        receiptNumber: r.receiptNumber,
-        receiptDate: r.receiptDate ? r.receiptDate.split('T')[0] : '',
-        notes: r.notes || '',
+        warehouseId: receipt.warehouseId,
+        supplierId: receipt.supplierId,
+        receiptNumber: receipt.receiptNumber,
+        receiptDate: receipt.receiptDate
+          ? new Date(receipt.receiptDate).toISOString().split('T')[0]
+          : '',
+        notes: receipt.notes || '',
         lines:
-          r.lines && r.lines.length > 0
-            ? r.lines.map((l) => ({
+          receipt.lines.length > 0
+            ? receipt.lines.map((l) => ({
                 id: l.id,
                 itemId: l.itemId,
                 quantityReceived: l.quantityReceived,
@@ -361,238 +370,26 @@ export const ReceiptForm: React.FC<ReceiptFormProps> = ({ receiptId, onSaved, on
         className="receipt-form"
         noValidate
       >
-        {/* Header Information Card with Reusable FormField abstractions */}
-        <div className="form-card">
-          <h3 className="form-section-title">1. Document Header Information</h3>
-          <div className="form-grid-3">
-            <FormField
-              label={t.receipts.warehouse}
-              htmlFor="warehouseId"
-              required
-              error={errors.warehouseId?.message}
-            >
-              <select
-                id="warehouseId"
-                className="form-select"
-                {...register('warehouseId')}
-                disabled={saving}
-              >
-                <option value="">{t.receipts.selectWarehouse}</option>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.code} — {w.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+        <ReceiptFormHeader
+          warehouses={warehouses}
+          suppliers={suppliers}
+          register={register}
+          errors={errors}
+          disabled={saving}
+        />
 
-            <FormField
-              label={t.receipts.supplier}
-              htmlFor="supplierId"
-              required
-              error={errors.supplierId?.message}
-            >
-              <select
-                id="supplierId"
-                className="form-select"
-                {...register('supplierId')}
-                disabled={saving}
-              >
-                <option value="">{t.receipts.selectSupplier}</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
+        <ReceiptFormLines
+          fields={fields}
+          items={items}
+          watchedLines={watchedLines}
+          register={register}
+          errors={errors}
+          onAddLine={handleAddLine}
+          onRemoveLine={handleRemoveLine}
+          saving={saving}
+          previewTotal={previewTotal}
+        />
 
-            <FormField
-              label={t.receipts.date}
-              htmlFor="receiptDate"
-              required
-              error={errors.receiptDate?.message}
-            >
-              <input
-                id="receiptDate"
-                type="date"
-                className="form-input"
-                {...register('receiptDate')}
-                disabled={saving}
-              />
-            </FormField>
-
-            <FormField
-              label={t.receipts.receiptNumber}
-              htmlFor="receiptNumber"
-              helpText="Leave blank for auto-generation"
-              error={errors.receiptNumber?.message}
-            >
-              <input
-                id="receiptNumber"
-                type="text"
-                className="form-input"
-                placeholder="e.g. REC-2026-001"
-                {...register('receiptNumber')}
-                disabled={saving}
-              />
-            </FormField>
-
-            <FormField
-              label={t.receipts.notes}
-              htmlFor="notes"
-              className="grid-span-2"
-              error={errors.notes?.message}
-            >
-              <input
-                id="notes"
-                type="text"
-                className="form-input"
-                placeholder="Reference delivery note, PO #, bay number..."
-                {...register('notes')}
-                disabled={saving}
-              />
-            </FormField>
-          </div>
-        </div>
-
-        {/* Lines Information Card */}
-        <div className="form-card">
-          <div className="card-header-flex">
-            <h3 className="form-section-title">2. {t.receipts.lines}</h3>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={handleAddLine}
-              disabled={saving}
-            >
-              {t.receipts.addLine}
-            </button>
-          </div>
-
-          {errors.lines?.root && (
-            <p className="form-error-text" role="alert" style={{ marginBottom: '0.5rem' }}>
-              {errors.lines.root.message}
-            </p>
-          )}
-
-          <div className="table-responsive">
-            <table className="data-table lines-table" aria-label="Receipt Lines Entry Table">
-              <thead>
-                <tr>
-                  <th scope="col" style={{ width: '40px' }}>
-                    #
-                  </th>
-                  <th scope="col" style={{ minWidth: '220px' }}>
-                    {t.receipts.item}
-                  </th>
-                  <th scope="col" style={{ width: '130px' }}>
-                    {t.receipts.quantity}
-                  </th>
-                  <th scope="col" style={{ width: '130px' }}>
-                    {t.receipts.unitCost}
-                  </th>
-                  <th scope="col" style={{ width: '130px' }} className="text-end">
-                    {t.receipts.lineTotal}
-                  </th>
-                  <th scope="col" style={{ width: '60px' }} className="text-center">
-                    ✕
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {fields.map((field, idx) => {
-                  const lineData = watchedLines?.[idx];
-                  const qStr = lineData?.quantityReceived || '0';
-                  const cStr = lineData?.unitCost || '0';
-                  const qNum = parseFloat(qStr) || 0;
-                  const cNum = parseFloat(cStr) || 0;
-                  const linePreview = Math.round(qNum * cNum * 10000) / 10000;
-                  const lineErrors = errors.lines?.[idx];
-
-                  return (
-                    <tr key={field.id}>
-                      <td className="text-muted">{idx + 1}</td>
-                      <td>
-                        <select
-                          className={`form-select form-select-sm ${lineErrors?.itemId ? 'has-error' : ''}`}
-                          {...register(`lines.${idx}.itemId`)}
-                          disabled={saving}
-                          aria-label={`Line ${idx + 1} item selection`}
-                        >
-                          <option value="">{t.receipts.selectItem}</option>
-                          {items.map((it) => (
-                            <option key={it.id} value={it.id}>
-                              {it.sku} — {it.name} ({it.uom})
-                            </option>
-                          ))}
-                        </select>
-                        {lineErrors?.itemId && (
-                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
-                            {lineErrors.itemId.message}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          min="0.0001"
-                          className={`form-input form-input-sm text-end ${lineErrors?.quantityReceived ? 'has-error' : ''}`}
-                          {...register(`lines.${idx}.quantityReceived`)}
-                          disabled={saving}
-                          aria-label={`Line ${idx + 1} quantity`}
-                        />
-                        {lineErrors?.quantityReceived && (
-                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
-                            {lineErrors.quantityReceived.message}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          step="0.0001"
-                          min="0.0000"
-                          className={`form-input form-input-sm text-end ${lineErrors?.unitCost ? 'has-error' : ''}`}
-                          {...register(`lines.${idx}.unitCost`)}
-                          disabled={saving}
-                          aria-label={`Line ${idx + 1} unit cost`}
-                        />
-                        {lineErrors?.unitCost && (
-                          <span className="form-error-text" style={{ fontSize: '0.75rem' }}>
-                            {lineErrors.unitCost.message}
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-end font-mono">{formatCurrency(linePreview)}</td>
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          className="btn-icon-danger"
-                          onClick={() => handleRemoveLine(idx)}
-                          disabled={fields.length <= 1 || saving}
-                          aria-label={`Remove line ${idx + 1}`}
-                          title={t.receipts.removeLine}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Form Totals Summary */}
-          <div className="form-totals-summary">
-            <span className="totals-label">{t.receipts.totalAmount} (Safe Decimal Preview):</span>
-            <strong className="totals-amount">{formatCurrency(previewTotal)}</strong>
-          </div>
-        </div>
-
-        {/* Footer Actions */}
         <div className="form-footer-actions">
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>
             {t.common.cancel}

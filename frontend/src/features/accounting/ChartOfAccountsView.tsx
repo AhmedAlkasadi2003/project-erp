@@ -13,6 +13,9 @@ import { Account, AccountNormalBalance, AccountType, InventoryAccountsConfig } f
 import { Alert } from '../../components/Alert';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { GrnClearingBanner } from './GrnClearingBanner';
+import { AccountsTable } from './AccountsTable';
+import { AccountFormModal } from './AccountFormModal';
 
 export const ChartOfAccountsView: React.FC = () => {
   const { user } = useAuth();
@@ -161,46 +164,23 @@ export const ChartOfAccountsView: React.FC = () => {
         )}
       </div>
 
-      {!canEdit && (
-        <Alert
-          type="info"
-          message={t.accounting.readOnlyNotice}
-        />
-      )}
+      {!canEdit && <Alert type="info" message={t.accounting.readOnlyNotice} />}
 
       {error && <Alert type="error" message={error} onClose={() => setError(null)} />}
-      {successMsg && <Alert type="success" message={successMsg} onClose={() => setSuccessMsg(null)} />}
-
-      {/* GRN Clearing Configuration Card */}
-      {config && (
-        <div className="card" style={{ marginBottom: '1.5rem', background: '#f8fafc', borderLeft: '4px solid #3b82f6' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#1e293b' }}>
-                📌 {t.accounting.grnClearingTitle}
-              </h3>
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#64748b' }}>
-                {t.accounting.grnClearingDesc}
-              </p>
-            </div>
-            <div>
-              {config.grnClearingAccount ? (
-                <span className="badge badge-success font-mono" style={{ fontSize: '0.95rem', padding: '0.5rem 0.75rem' }}>
-                  {config.grnClearingAccount.code} — {config.grnClearingAccount.name} ({config.grnClearingAccount.type})
-                </span>
-              ) : (
-                <span className="badge badge-warning">لم يتم تحديد حساب وسيط بعد</span>
-              )}
-            </div>
-          </div>
-        </div>
+      {successMsg && (
+        <Alert type="success" message={successMsg} onClose={() => setSuccessMsg(null)} />
       )}
+
+      {/* GRN Clearing Configuration Banner */}
+      <GrnClearingBanner config={config} />
 
       {/* Search and Filters */}
       <div className="card filter-card" style={{ marginBottom: '1.5rem' }}>
         <div className="form-grid-3">
           <div className="form-group">
-            <label htmlFor="coa-search" className="form-label">{t.receipts.searchPlaceholder}</label>
+            <label htmlFor="coa-search" className="form-label">
+              {t.receipts.searchPlaceholder}
+            </label>
             <input
               id="coa-search"
               type="text"
@@ -212,7 +192,9 @@ export const ChartOfAccountsView: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="coa-type" className="form-label">{t.accounting.accountType}</label>
+            <label htmlFor="coa-type" className="form-label">
+              {t.accounting.accountType}
+            </label>
             <select
               id="coa-type"
               className="form-input form-select"
@@ -233,210 +215,34 @@ export const ChartOfAccountsView: React.FC = () => {
       {loading ? (
         <LoadingSpinner message={t.common.loading} />
       ) : (
-        <div className="card table-card">
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>{t.accounting.accountCode}</th>
-                  <th>{t.accounting.accountName}</th>
-                  <th>{t.accounting.accountType}</th>
-                  <th>{t.accounting.normalBalance}</th>
-                  <th>{t.accounting.activeStatus}</th>
-                  <th style={{ textAlign: 'center' }}>خصائص وميزات</th>
-                  {canEdit && <th style={{ textAlign: 'center' }}>{t.receipts.actions}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {(!accounts || accounts.length === 0) && (
-                  <tr>
-                    <td colSpan={canEdit ? 7 : 6} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
-                      لا توجد حسابات مسجلة تطابق معايير البحث
-                    </td>
-                  </tr>
-                )}
-                {(accounts || []).map((acc) => {
-                  const isGrn = config?.grnClearingAccountId === acc.id;
-                  return (
-                    <tr key={acc.id} style={isGrn ? { backgroundColor: '#f0f9ff' } : undefined}>
-                      <td className="font-mono font-bold">{acc.code}</td>
-                      <td>
-                        <strong>{acc.name}</strong>
-                        {acc.description && (
-                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{acc.description}</div>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge ${acc.type === 'ASSET' ? 'badge-info' : acc.type === 'LIABILITY' ? 'badge-warning' : 'badge-default'}`}>
-                          {acc.type}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge">{acc.normalBalance}</span>
-                      </td>
-                      <td>
-                        <span className={`badge ${acc.isActive ? 'badge-success' : 'badge-danger'}`}>
-                          {acc.isActive ? 'نشط' : 'معطل'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {isGrn && (
-                          <span className="badge badge-success font-bold" title="حساب وسيط البضائع الافتراضي">
-                            ✓ وسيط البضائع (GRN)
-                          </span>
-                        )}
-                        {acc.isSystem && (
-                          <span className="badge badge-default" style={{ marginInlineStart: '0.25rem' }}>
-                            نظامي
-                          </span>
-                        )}
-                      </td>
-                      {canEdit && (
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
-                            {canEdit && acc.type === 'LIABILITY' && !isGrn && (
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-outline"
-                                onClick={() => handleSetGrnClearing(acc.id)}
-                                title={t.accounting.setGrnClearing}
-                              >
-                                تعيين GRN
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-outline"
-                              onClick={() => handleOpenEdit(acc)}
-                            >
-                              {t.receipts.edit}
-                            </button>
-                            {canDelete && (
-                              <button
-                                type="button"
-                                className="btn btn-xs btn-outline text-danger"
-                                onClick={() => setDeleteId(acc.id)}
-                                disabled={acc.isSystem || isGrn}
-                                title={acc.isSystem || isGrn ? 'لا يمكن حذف الحسابات النظامية أو الوسيطة' : t.accounting.deleteAccount}
-                              >
-                                {t.receipts.delete}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <AccountsTable
+          accounts={accounts}
+          config={config}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onSetGrnClearing={handleSetGrnClearing}
+          onOpenEdit={handleOpenEdit}
+          onDelete={setDeleteId}
+        />
       )}
 
       {/* Create / Edit Modal */}
-      {showModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3 className="modal-title">
-                {editingAccount ? t.accounting.editAccount : t.accounting.newAccount}
-              </h3>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => setShowModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleSaveAccount}>
-              <div className="modal-body">
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">{t.accounting.accountCode}</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    required
-                    disabled={Boolean(editingAccount)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label className="form-label">{t.accounting.accountName}</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {!editingAccount && (
-                  <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                    <div className="form-group">
-                      <label className="form-label">{t.accounting.accountType}</label>
-                      <select
-                        className="form-input form-select"
-                        value={type}
-                        onChange={(e) => {
-                          const val = e.target.value as AccountType;
-                          setType(val);
-                          setNormalBalance(val === 'ASSET' || val === 'EXPENSE' ? 'DEBIT' : 'CREDIT');
-                        }}
-                      >
-                        <option value="ASSET">ASSET (أصول)</option>
-                        <option value="LIABILITY">LIABILITY (خصوم / التزامات)</option>
-                        <option value="EQUITY">EQUITY (حقوق ملكية)</option>
-                        <option value="REVENUE">REVENUE (إيرادات)</option>
-                        <option value="EXPENSE">EXPENSE (مصروفات)</option>
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label className="form-label">{t.accounting.normalBalance}</label>
-                      <select
-                        className="form-input form-select"
-                        value={normalBalance}
-                        onChange={(e) => setNormalBalance(e.target.value as AccountNormalBalance)}
-                      >
-                        <option value="DEBIT">مدين (DEBIT)</option>
-                        <option value="CREDIT">دائن (CREDIT)</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label className="form-label">الوصف والملاحظات</label>
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setShowModal(false)}
-                >
-                  {t.common.cancel}
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  {t.common.save}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AccountFormModal
+        isOpen={showModal}
+        editingAccount={editingAccount}
+        code={code}
+        onCodeChange={setCode}
+        name={name}
+        onNameChange={setName}
+        type={type}
+        onTypeChange={setType}
+        normalBalance={normalBalance}
+        onNormalBalanceChange={setNormalBalance}
+        description={description}
+        onDescriptionChange={setDescription}
+        onClose={() => setShowModal(false)}
+        onSubmit={handleSaveAccount}
+      />
 
       {/* Delete Confirmation Modal */}
       {deleteId && (

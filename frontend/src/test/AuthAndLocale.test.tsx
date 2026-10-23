@@ -2,8 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { LoginForm } from '../features/auth/LoginForm';
-import { AuthProvider, useAuth } from '../store/AuthContext';
-import { LocaleProvider, useLocale } from '../store/LocaleContext';
+import { AuthProvider, useAuth } from '../hooks/useAuth';
+import { LocaleProvider, useLocale } from '../hooks/useLocale';
 import * as authApi from '../services/auth';
 
 vi.mock('../services/auth');

@@ -2,7 +2,7 @@ import React from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useLocale } from '../hooks/useLocale';
 import { AppView } from '../types';
-import { getAuthorizedNavItems } from '../routes/navigation';
+import { getAuthorizedNavItems } from '../utils/navigation';
 
 export type { AppView };
 

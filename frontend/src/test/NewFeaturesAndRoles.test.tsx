@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { LocaleProvider } from '../store/LocaleContext';
-import { AuthProvider } from '../store/AuthContext';
+import { LocaleProvider } from '../hooks/useLocale';
+import { AuthProvider } from '../hooks/useAuth';
 import { StockCardView } from '../features/inventory/StockCardView';
 import { ChartOfAccountsView } from '../features/accounting/ChartOfAccountsView';
 import { AccountingPeriodsView } from '../features/accounting/AccountingPeriodsView';

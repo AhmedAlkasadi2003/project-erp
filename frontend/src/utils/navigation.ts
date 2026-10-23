@@ -1,11 +1,4 @@
-import { AppView, Translations, UserRole } from '../types';
-
-export interface NavItemConfig {
-  id: AppView;
-  labelKey: keyof Translations['nav'];
-  allowedRoles: UserRole[];
-  category?: 'inventory' | 'finance' | 'system';
-}
+import { AppView, NavItemConfig, UserRole } from '../types';
 
 /**
  * Authoritative Navigation Matrix

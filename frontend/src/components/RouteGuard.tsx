@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppView, UserRole } from '../types';
-import { canUserAccessView } from './navigation';
+import { canUserAccessView } from '../utils/navigation';
 
 interface RouteGuardProps {
   view: AppView;

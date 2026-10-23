@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { AuthProvider } from './store/AuthContext';
-import { LocaleProvider } from './store/LocaleContext';
-import { useAuth } from './hooks/useAuth';
-import { useLocale } from './hooks/useLocale';
+import { AuthProvider, useAuth } from './hooks/useAuth';
+import { LocaleProvider, useLocale } from './hooks/useLocale';
 import { MainLayout } from './layouts/MainLayout';
-import { RouteGuard } from './routes/RouteGuard';
-import { canUserAccessView } from './routes/navigation';
+import { RouteGuard } from './components/RouteGuard';
+import { canUserAccessView } from './utils/navigation';
 import { AppView } from './types';
 import {
   LoginPage,

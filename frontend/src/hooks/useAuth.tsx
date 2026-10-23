@@ -3,7 +3,9 @@ import { AuthContextType, Company, LoginCredentials, User } from '../types';
 import * as authApi from '../services/auth';
 import { getStoredToken, setOnUnauthorizedCallback, setStoredToken } from '../services/client';
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export type { AuthContextType };
+
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(() => getStoredToken());

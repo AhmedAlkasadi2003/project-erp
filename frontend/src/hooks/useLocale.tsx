@@ -2,7 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Locale, LocaleContextType } from '../types';
 import { translations } from '../i18n';
 
-const LocaleContext = createContext<LocaleContextType | undefined>(undefined);
+export type { LocaleContextType };
+
+export const LocaleContext = createContext<LocaleContextType | undefined>(undefined);
 
 export const LocaleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locale, setLocaleState] = useState<Locale>(() => {

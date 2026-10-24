@@ -139,12 +139,24 @@ describe('Accounting Foundation, Chart of Accounts & Periods (e2e)', () => {
   });
 
   async function cleanupTestData() {
+    await prisma.receipt.updateMany({
+      where: {
+        journalEntry: {
+          OR: [
+            { sourceReference: 'REC-2026-TEST' },
+            { description: 'Goods receipt standard accrual journal' },
+          ],
+        },
+      },
+      data: {
+        journalEntryId: null,
+      },
+    });
     await prisma.journalLine.deleteMany({
       where: {
         OR: [
           { journalEntry: { sourceReference: 'REC-2026-TEST' } },
-          { journalEntry: { description: { contains: 'test', mode: 'insensitive' } } },
-          { journalEntry: { description: { contains: 'accrual', mode: 'insensitive' } } },
+          { journalEntry: { description: 'Goods receipt standard accrual journal' } },
         ],
       },
     });
@@ -152,8 +164,7 @@ describe('Accounting Foundation, Chart of Accounts & Periods (e2e)', () => {
       where: {
         OR: [
           { sourceReference: 'REC-2026-TEST' },
-          { description: { contains: 'test', mode: 'insensitive' } },
-          { description: { contains: 'accrual', mode: 'insensitive' } },
+          { description: 'Goods receipt standard accrual journal' },
         ],
       },
     });

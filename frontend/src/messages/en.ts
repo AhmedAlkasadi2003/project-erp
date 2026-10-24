@@ -239,5 +239,7 @@ export const en: Translations = {
     connected: 'Connected to server',
     disconnected: 'Disconnected from server',
     language: 'Language',
+    exportCsv: 'Export Excel/CSV',
+    printPdf: 'Print / PDF',
   },
 };

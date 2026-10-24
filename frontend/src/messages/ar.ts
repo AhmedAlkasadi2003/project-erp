@@ -239,5 +239,7 @@ export const ar: Translations = {
     connected: 'متصل بالخادم',
     disconnected: 'غير متصل بالخادم',
     language: 'اللغة',
+    exportCsv: 'تصدير Excel/CSV',
+    printPdf: 'طباعة / PDF',
   },
 };

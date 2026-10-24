@@ -10,6 +10,7 @@ import { VoidReceiptModal } from './VoidReceiptModal';
 import { ReceiptMetadataGrid } from './ReceiptMetadataGrid';
 import { ReceiptLinesTable } from './ReceiptLinesTable';
 import { translateErrorMessage } from '../../utils/errorTranslator';
+import { exportToCsv, triggerPrint } from '../../utils/export';
 import * as receiptsApi from '../../services/receipts';
 
 interface ReceiptDetailsProps {
@@ -79,6 +80,33 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
     }
   };
 
+  const handleExportCsv = () => {
+    if (!receipt || !receipt.lines || receipt.lines.length === 0) return;
+    const headers = [
+      '#',
+      t.receipts.sku,
+      t.receipts.item,
+      t.receipts.quantity,
+      t.receipts.unitCost,
+      locale === 'ar' ? 'المجموع الفرعي' : 'Subtotal',
+      t.receipts.taxAmount,
+      t.receipts.lineTotal,
+      t.receipts.notes,
+    ];
+    const rows = receipt.lines.map((l) => [
+      l.lineNumber,
+      l.item?.sku || '',
+      l.item?.name || '',
+      l.quantityReceived,
+      l.unitCost,
+      (Number(l.quantityReceived) * Number(l.unitCost)).toFixed(4),
+      l.taxAmount,
+      l.totalAmount,
+      l.notes || '',
+    ]);
+    exportToCsv(`receipt_${receipt.receiptNumber}_lines`, headers, rows);
+  };
+
   if (loading) {
     return <LoadingSpinner message={t.common.loading} />;
   }
@@ -137,9 +165,51 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
             </button>
           )}
 
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleExportCsv}
+            title={t.common.exportCsv}
+          >
+            📥 {t.common.exportCsv}
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={triggerPrint}
+            title={t.common.printPdf}
+          >
+            🖨️ {t.common.printPdf}
+          </button>
+
           <button type="button" className="btn btn-ghost" onClick={() => void fetchReceipt()}>
             🔄 {t.common.refresh}
           </button>
+        </div>
+      </div>
+
+      {/* Official Print-Only Document Header */}
+      <div className="print-only print-document-header">
+        <div className="print-header-top">
+          <div>
+            <h1 className="print-company-name">Akemi Company</h1>
+            <p className="print-company-sub">
+              {locale === 'ar' ? 'شركة أكيمي للصناعات المتطورة' : 'Akemi Advanced Industrial Systems Ltd.'}
+            </p>
+          </div>
+          <div className="print-doc-badge">
+            <h2 className="print-doc-title">
+              {locale === 'ar' ? 'سند استلام بضاعة (GRN)' : 'Goods Receipt Note (GRN)'}
+            </h2>
+            <p className="print-doc-num">{receipt.receiptNumber}</p>
+          </div>
+        </div>
+        <div className="print-header-meta">
+          <div><strong>{t.receipts.date}:</strong> {new Date(receipt.receiptDate).toLocaleDateString()}</div>
+          <div><strong>{t.receipts.status}:</strong> {receipt.status}</div>
+          <div><strong>{t.receipts.warehouse}:</strong> {receipt.warehouse?.name || receipt.warehouseId}</div>
+          <div><strong>{t.receipts.supplier}:</strong> {receipt.supplier?.name || receipt.supplierId}</div>
         </div>
       </div>
 
@@ -152,6 +222,25 @@ export const ReceiptDetails: React.FC<ReceiptDetailsProps> = ({
 
       {/* Line Items Table */}
       <ReceiptLinesTable receipt={receipt} />
+
+      {/* Official Print-Only Signatures Section */}
+      <div className="print-only print-signatures-section">
+        <div className="print-sig-col">
+          <span className="print-sig-title">{locale === 'ar' ? 'المستلم (أمين المخزن)' : 'Received By (Storekeeper)'}</span>
+          <div className="print-sig-line"></div>
+          <span className="print-sig-date">{locale === 'ar' ? 'الاسم والتوقيع: ________________' : 'Signature: ________________'}</span>
+        </div>
+        <div className="print-sig-col">
+          <span className="print-sig-title">{locale === 'ar' ? 'المحاسب المالي' : 'Accountant'}</span>
+          <div className="print-sig-line"></div>
+          <span className="print-sig-date">{locale === 'ar' ? 'التدقيق والتوقيع: ________________' : 'Signature: ________________'}</span>
+        </div>
+        <div className="print-sig-col">
+          <span className="print-sig-title">{locale === 'ar' ? 'الاعتماد الإداري والختم' : 'Authorized Approval'}</span>
+          <div className="print-sig-line"></div>
+          <span className="print-sig-date">{locale === 'ar' ? 'الختم والتاريخ: ________________' : 'Stamp & Date: ________________'}</span>
+        </div>
+      </div>
 
       {/* Post Modal */}
       <PostReceiptModal

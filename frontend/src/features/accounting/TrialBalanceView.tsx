@@ -8,10 +8,11 @@ import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { TrialBalanceSummaryCards } from './TrialBalanceSummaryCards';
 import { TrialBalanceTable } from './TrialBalanceTable';
 import { GlReconciliationCard } from './GlReconciliationCard';
+import { exportToCsv, triggerPrint } from '../../utils/export';
 
 export const TrialBalanceView: React.FC = () => {
   const { user } = useAuth();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   const [asOfDate, setAsOfDate] = useState<string>('');
   const [tb, setTb] = useState<TrialBalanceResult | null>(null);
@@ -59,12 +60,61 @@ export const TrialBalanceView: React.FC = () => {
     );
   }
 
+  const handleExportCsv = () => {
+    if (!tb || !tb.accounts || tb.accounts.length === 0) return;
+    const headers = [
+      t.accounting.accountCode,
+      t.accounting.accountName,
+      t.accounting.accountType,
+      locale === 'ar' ? 'مدين' : 'Debit',
+      locale === 'ar' ? 'دائن' : 'Credit',
+      locale === 'ar' ? 'الرصيد الصافي' : 'Net Balance',
+    ];
+    const rows = tb.accounts.map((acc) => [
+      acc.code,
+      acc.name,
+      acc.type,
+      acc.debit,
+      acc.credit,
+      acc.balance,
+    ]);
+    rows.push([
+      'TOTAL',
+      locale === 'ar' ? 'الإجمالي العام' : 'Total',
+      '',
+      tb.totalDebit,
+      tb.totalCredit,
+      tb.isBalanced ? t.accounting.balancedStatus : t.accounting.unbalancedStatus,
+    ]);
+    exportToCsv(`trial_balance_${asOfDate || new Date().toISOString().slice(0, 10)}`, headers, rows);
+  };
+
   return (
     <div className="trial-balance-container">
       <div className="view-header">
         <div>
           <h2 className="view-title">{t.accounting.trialBalanceTitle}</h2>
           <p className="view-subtitle">{t.accounting.trialBalanceSubtitle}</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleExportCsv}
+            disabled={!tb || tb.accounts.length === 0}
+            title={t.common.exportCsv}
+          >
+            📥 {t.common.exportCsv}
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={triggerPrint}
+            disabled={!tb}
+            title={t.common.printPdf}
+          >
+            🖨️ {t.common.printPdf}
+          </button>
         </div>
       </div>
 

@@ -7,7 +7,7 @@ interface ReceiptMetadataGridProps {
 }
 
 export const ReceiptMetadataGrid: React.FC<ReceiptMetadataGridProps> = ({ receipt }) => {
-  const { t, formatDate } = useLocale();
+  const { t, locale, formatDate } = useLocale();
 
   return (
     <>
@@ -84,7 +84,31 @@ export const ReceiptMetadataGrid: React.FC<ReceiptMetadataGridProps> = ({ receip
 
       {receipt.notes && (
         <div className="notes-banner">
-          <strong>{t.receipts.notes}:</strong> {receipt.notes}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+            <span style={{ fontSize: '1.1rem' }}>📎</span>
+            <strong>{t.receipts.notes} & {locale === 'ar' ? 'المرفقات' : 'Attachments'}:</strong>
+          </div>
+          <div style={{ whiteSpace: 'pre-wrap', color: 'var(--gray-800)' }}>
+            {receipt.notes.split(/\s+/).some((part) => part.startsWith('http://') || part.startsWith('https://')) ? (
+              receipt.notes.split(/(\s+)/).map((word, idx) =>
+                word.startsWith('http://') || word.startsWith('https://') ? (
+                  <a
+                    key={idx}
+                    href={word}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--primary-600)', textDecoration: 'underline', wordBreak: 'break-all' }}
+                  >
+                    🔗 {word}
+                  </a>
+                ) : (
+                  <span key={idx}>{word}</span>
+                ),
+              )
+            ) : (
+              receipt.notes
+            )}
+          </div>
         </div>
       )}
     </>

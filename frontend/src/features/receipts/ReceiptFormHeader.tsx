@@ -19,11 +19,13 @@ export const ReceiptFormHeader: React.FC<ReceiptFormHeaderProps> = ({
   errors,
   disabled,
 }) => {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   return (
     <div className="form-card">
-      <h3 className="form-section-title">1. Document Header Information</h3>
+      <h3 className="form-section-title">
+        {locale === 'ar' ? '1. بيانات ترويسة ومرفقات السند' : '1. Document Header Information'}
+      </h3>
       <div className="form-grid-3">
         <FormField
           label={t.receipts.warehouse}
@@ -99,16 +101,17 @@ export const ReceiptFormHeader: React.FC<ReceiptFormHeaderProps> = ({
         </FormField>
 
         <FormField
-          label={t.receipts.notes}
+          label={`${t.receipts.notes} & ${locale === 'ar' ? 'المرفقات' : 'Attachments'}`}
           htmlFor="notes"
           className="grid-span-2"
           error={errors.notes?.message as string | undefined}
+          helpText={locale === 'ar' ? 'يمكن إدخال رقم أمر الشراء أو رابط الفاتورة الممسوحة ضوئياً' : 'Delivery note, PO #, or link to scanned invoice/attachment'}
         >
           <input
             id="notes"
             type="text"
             className="form-input"
-            placeholder="Reference delivery note, PO #, bay number..."
+            placeholder={locale === 'ar' ? 'رقم أمر الشراء، رابط المستند السحابي، رقم بوليصة الشحن...' : 'Reference delivery note, PO #, cloud attachment URL...'}
             {...register('notes')}
             disabled={disabled}
           />

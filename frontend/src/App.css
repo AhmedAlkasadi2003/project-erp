@@ -1991,3 +1991,162 @@
   justify-content: flex-end;
   gap: 0.75rem;
 }
+
+/* ==============================================================================
+   PRINT & PDF EXPORT STYLES
+   ============================================================================== */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10.5pt;
+  }
+
+  /* Hide interactive navigation and controls */
+  .app-navbar,
+  .details-actions,
+  .back-btn,
+  .btn,
+  .filter-card,
+  .pagination-container,
+  .modal-overlay,
+  .alert-banner,
+  .view-header .header-actions {
+    display: none !important;
+  }
+
+  /* Make print header and signatures visible */
+  .print-only {
+    display: block !important;
+  }
+
+  .print-document-header {
+    display: block !important;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .print-header-top {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    margin-bottom: 0.75rem;
+  }
+
+  .print-company-name {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+  }
+
+  .print-company-sub {
+    font-size: 0.85rem;
+    color: #475569;
+    margin: 0.2rem 0 0 0;
+  }
+
+  .print-doc-badge {
+    text-align: right;
+  }
+
+  [dir="rtl"] .print-doc-badge {
+    text-align: left;
+  }
+
+  .print-doc-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e3a8a;
+    margin: 0;
+  }
+
+  .print-doc-num {
+    font-size: 1.05rem;
+    font-family: monospace;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0.2rem 0 0 0;
+  }
+
+  .print-header-meta {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0.75rem !important;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.75rem;
+    background-color: #f8fafc !important;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+  }
+
+  .print-signatures-section {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 2rem !important;
+    margin-top: 3rem;
+    padding-top: 1rem;
+    page-break-inside: avoid;
+  }
+
+  .print-sig-col {
+    flex: 1;
+    text-align: center;
+  }
+
+  .print-sig-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1e293b;
+    display: block;
+    margin-bottom: 2.5rem;
+  }
+
+  .print-sig-line {
+    border-bottom: 1px dashed #64748b;
+    margin-bottom: 0.4rem;
+  }
+
+  .print-sig-date {
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+
+  .app-main-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .card,
+  .table-container {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    margin-bottom: 1rem !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 0.45rem 0.6rem !important;
+    color: #0f172a !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+}

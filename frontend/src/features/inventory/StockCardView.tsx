@@ -9,10 +9,11 @@ import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { StockCardSummaryCards } from './StockCardSummaryCards';
 import { StockMovementTable } from './StockMovementTable';
 import { WarehouseBalancesTable } from './WarehouseBalancesTable';
+import { exportToCsv, triggerPrint } from '../../utils/export';
 
 export const StockCardView: React.FC = () => {
   const { company } = useAuth();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   const [items, setItems] = useState<Item[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -86,12 +87,65 @@ export const StockCardView: React.FC = () => {
     }
   };
 
+  const handleExportCsv = () => {
+    if (!stockCard || !stockCard.movements || stockCard.movements.length === 0) return;
+    const headers = [
+      locale === 'ar' ? 'التاريخ' : 'Date',
+      t.stockCard.movementType,
+      t.stockCard.reference,
+      t.receipts.warehouse,
+      t.stockCard.qtyIn,
+      t.stockCard.qtyOut,
+      t.stockCard.unitCost,
+      t.stockCard.totalCost,
+      t.stockCard.runningQuantity,
+      t.stockCard.runningAverageCost,
+    ];
+    const rows = stockCard.movements.map((m) => {
+      const q = Number(m.quantity);
+      return [
+        new Date(m.movementDate).toLocaleDateString(),
+        m.movementType,
+        m.referenceId,
+        m.warehouse?.name || m.warehouse?.code || '',
+        q > 0 ? String(q) : '',
+        q < 0 ? String(Math.abs(q)) : '',
+        m.unitCost,
+        m.totalCost,
+        m.runningQuantity,
+        m.runningAverageCost,
+      ];
+    });
+    const sku = stockCard.item?.sku || 'item';
+    exportToCsv(`stock_card_${sku}_${new Date().toISOString().slice(0, 10)}`, headers, rows);
+  };
+
   return (
     <div className="stock-card-container">
       <div className="view-header">
         <div>
           <h2 className="view-title">{t.stockCard.title}</h2>
           <p className="view-subtitle">{t.stockCard.subtitle}</p>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleExportCsv}
+            disabled={!stockCard || stockCard.movements.length === 0}
+            title={t.common.exportCsv}
+          >
+            📥 {t.common.exportCsv}
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={triggerPrint}
+            disabled={!stockCard}
+            title={t.common.printPdf}
+          >
+            🖨️ {t.common.printPdf}
+          </button>
         </div>
       </div>
 

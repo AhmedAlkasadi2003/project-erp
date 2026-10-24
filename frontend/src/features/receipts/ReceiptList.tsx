@@ -17,6 +17,7 @@ import { VoidReceiptModal } from './VoidReceiptModal';
 import { ReceiptFilterToolbar } from './ReceiptFilterToolbar';
 import { ReceiptTable } from './ReceiptTable';
 import { translateErrorMessage } from '../../utils/errorTranslator';
+import { exportToCsv } from '../../utils/export';
 import * as receiptsApi from '../../services/receipts';
 import * as referencesApi from '../../services/references';
 
@@ -259,6 +260,31 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
     }
   };
 
+  const handleExportCsv = () => {
+    if (receipts.length === 0) return;
+    const headers = [
+      t.receipts.receiptNumber,
+      t.receipts.date,
+      t.receipts.warehouse,
+      t.receipts.supplier,
+      t.receipts.status,
+      t.receipts.totalAmount,
+      locale === 'ar' ? 'العملة' : 'Currency',
+      t.receipts.notes,
+    ];
+    const rows = receipts.map((r) => [
+      r.receiptNumber,
+      new Date(r.receiptDate).toLocaleDateString(),
+      r.warehouse?.name || r.warehouseId,
+      r.supplier?.name || r.supplierId,
+      r.status,
+      r.totalAmount,
+      'USD',
+      r.notes || '',
+    ]);
+    exportToCsv(`receipts_${new Date().toISOString().slice(0, 10)}`, headers, rows);
+  };
+
   return (
     <div className="receipt-list-container">
       <div className="view-header">
@@ -266,9 +292,20 @@ export const ReceiptList: React.FC<ReceiptListProps> = ({
           <h2 className="view-title">{t.receipts.listTitle}</h2>
           <p className="view-subtitle">{t.appSubtitle}</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={onCreateNew}>
-          {t.receipts.createNewReceipt}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleExportCsv}
+            disabled={receipts.length === 0}
+            title={t.common.exportCsv}
+          >
+            📥 {t.common.exportCsv}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={onCreateNew}>
+            + {t.receipts.createNewReceipt}
+          </button>
+        </div>
       </div>
 
       {successMessage && (

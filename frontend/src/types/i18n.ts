@@ -231,6 +231,8 @@ export interface Translations {
     connected: string;
     disconnected: string;
     language: string;
+    exportCsv: string;
+    printPdf: string;
   };
 }
 

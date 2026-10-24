@@ -1,4 +1,5 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -14,6 +15,8 @@ interface AuthenticatedRequest {
   };
 }
 
+@ApiTags('Accounting')
+@ApiBearerAuth('JWT-auth')
 @Controller('accounting/reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AccountingReportsController {

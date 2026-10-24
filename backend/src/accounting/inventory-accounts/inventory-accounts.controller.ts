@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { InventoryAccountsService } from './inventory-accounts.service';
 import { UpdateInventoryAccountsConfigDto } from './dto/update-inventory-accounts-config.dto';
@@ -8,6 +9,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 
+@ApiTags('Accounting')
+@ApiBearerAuth('JWT-auth')
 @Controller('accounting/inventory-accounts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class InventoryAccountsController {

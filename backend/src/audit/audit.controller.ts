@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards, ValidationPipe } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AuditService } from './audit.service';
 import { QueryAuditEventsDto } from './dto/query-audit-events.dto';
@@ -8,6 +9,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
 
+@ApiTags('Audit')
+@ApiBearerAuth('JWT-auth')
 @Controller('audit-events')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.ACCOUNTANT, UserRole.WAREHOUSE_MANAGER)

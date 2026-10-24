@@ -1,4 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { StockBalanceService } from './stock-balance.service';
 import { InventoryLedgerService } from './inventory-ledger.service';
@@ -12,6 +13,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
 
+@ApiTags('Inventory')
+@ApiBearerAuth('JWT-auth')
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, CompanyAccessGuard, RolesGuard)
 export class InventoryController {

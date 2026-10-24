@@ -11,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AccountingPeriodsService } from './accounting-periods.service';
 import { CreateAccountingPeriodDto } from './dto/create-accounting-period.dto';
@@ -22,6 +23,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
 
+@ApiTags('Accounting')
+@ApiBearerAuth('JWT-auth')
 @Controller('accounting-periods')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AccountingPeriodsController {

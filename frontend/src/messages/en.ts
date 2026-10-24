@@ -1,7 +1,7 @@
 import type { Translations } from '../types/i18n';
 
 export const en: Translations = {
-  appName: 'Inventory Receipts ERP',
+  appName: 'Receipts Management System',
   appSubtitle:
     'Multi-company ERP for Inventory Receipts, Moving Weighted Average Costing, and GL Journal Posting',
   login: {

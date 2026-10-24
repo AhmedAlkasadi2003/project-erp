@@ -1,7 +1,7 @@
 import type { Translations } from '../types/i18n';
 
 export const ar: Translations = {
-  appName: 'نظام إدارة سندات الاستلام والمخزون',
+  appName: 'نظام إدارة السندات',
   appSubtitle:
     'نظام تخطيط موارد المؤسسات لإدارة استلام البضائع، تقييم المخزون المرجح، والترحيل لدفتر الأستاذ العام',
   login: {

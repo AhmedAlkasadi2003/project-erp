@@ -71,10 +71,10 @@ The deterministic seed (`pnpm db:seed`) provides test credentials hashed with **
 
 | Company Code | Company Name                | Email                       | Password           | Role          |
 | :----------- | :-------------------------- | :-------------------------- | :----------------- | :------------ |
-| `COMP-01`    | Acme Industrial Systems Ltd | `admin@acme-erp.local`      | `Admin123!@#`      | `ADMIN`       |
-| `COMP-01`    | Acme Industrial Systems Ltd | `clerk@acme-erp.local`      | `Clerk123!@#`      | `CLERK`       |
-| `COMP-01`    | Acme Industrial Systems Ltd | `accountant@acme-erp.local` | `Accountant123!@#` | `ACCOUNTANT`  |
-| `COMP-01`    | Acme Industrial Systems Ltd | `superadmin@acme-erp.local` | `SuperAdmin123!@#` | `SUPER_ADMIN` |
+| `COMP-01`    | Akemi Company | `admin@acme-erp.local`      | `Admin123!@#`      | `ADMIN`       |
+| `COMP-01`    | Akemi Company | `clerk@acme-erp.local`      | `Clerk123!@#`      | `CLERK`       |
+| `COMP-01`    | Akemi Company | `accountant@acme-erp.local` | `Accountant123!@#` | `ACCOUNTANT`  |
+| `COMP-01`    | Akemi Company | `superadmin@acme-erp.local` | `SuperAdmin123!@#` | `SUPER_ADMIN` |
 | `COMP-02`    | Beta Manufacturing Corp     | `admin@beta-corp.local`     | `BetaAdmin123!@#`  | `ADMIN`       |
 
 ---

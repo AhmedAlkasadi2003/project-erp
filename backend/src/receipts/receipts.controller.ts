@@ -14,6 +14,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { ReceiptsService } from './receipts.service';
 import { ReceiptPostingService } from './posting/receipt-posting.service';
@@ -32,6 +33,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
 
+@ApiTags('Receipts')
+@ApiBearerAuth('JWT-auth')
 @Controller('receipts')
 @UseGuards(JwtAuthGuard, CompanyAccessGuard, RolesGuard)
 export class ReceiptsController {

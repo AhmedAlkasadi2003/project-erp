@@ -16,10 +16,12 @@ async function main(): Promise<void> {
   // 1. Seed Tenant Company 1 (COMP-01)
   const company1 = await prisma.company.upsert({
     where: { code: 'COMP-01' },
-    update: {},
+    update: {
+      name: 'Akemi Company',
+    },
     create: {
       code: 'COMP-01',
-      name: 'Acme Industrial Systems Ltd',
+      name: 'Akemi Company',
       currency: 'USD',
       fiscalYearStart: 1,
       isActive: true,
